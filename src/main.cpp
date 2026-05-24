@@ -25,6 +25,9 @@ void setup()
     pinMode(PIN_PAIR, INPUT_PULLUP);
     pinMode(PIN_LEFT, INPUT_PULLUP);
     pinMode(PIN_RIGHT, INPUT_PULLUP);
+
+    Serial.println("con-venience FSM test ready");
+    Serial.printf("Initial state: %s\n", stateName(fsm_get_state()));
 }
 
 void loop()
@@ -91,7 +94,24 @@ void loop()
 
     if (hasEvent)
     {
+        state_t before = fsm_get_state();
         fsm_handle_event(event);
-        Serial.printf("Event: %d -> State: %d\n", event, fsm_get_state());
+        state_t after = fsm_get_state();
+
+        if (before != after)
+        {
+            Serial.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
+                          stateName(after));
+        }
+        else
+        {
+            Serial.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
+        }
+
+        if (after == STATE_MENU)
+        {
+            Serial.printf("[MENU]  selection: %s\n",
+                          fsm_get_menu_selection() ? "Friends" : "My Profile");
+        }
     }
 }

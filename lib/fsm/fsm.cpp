@@ -31,6 +31,74 @@ bool fsm_get_menu_selection()
     return menuOnFriends;
 }
 
+const char *eventName(event_t e)
+{
+    switch (e)
+    {
+        case EVENT_PAIRING_CLICK:
+            return "PAIRING_CLICK";
+        case EVENT_PAIRING_LONG_PRESS:
+            return "PAIRING_LONG_PRESS";
+        case EVENT_PAIRING_OVERTIME:
+            return "PAIRING_OVERTIME";
+        case EVENT_CARD_OVERTIME:
+            return "CARD_OVERTIME";
+        case EVENT_LEFT_CLICK:
+            return "LEFT_CLICK";
+        case EVENT_LEFT_LONG_PRESS:
+            return "LEFT_LONG_PRESS";
+        case EVENT_RIGHT_CLICK:
+            return "RIGHT_CLICK";
+        case EVENT_RIGHT_LONG_PRESS:
+            return "RIGHT_LONG_PRESS";
+        case EVENT_UP_CLICK:
+            return "UP_CLICK";
+        case EVENT_UP_LONG_PRESS:
+            return "UP_LONG_PRESS";
+        case EVENT_DOWN_CLICK:
+            return "DOWN_CLICK";
+        case EVENT_DOWN_LONG_PRESS:
+            return "DOWN_LONG_PRESS";
+        case EVENT_ACOM_SUCCESS:
+            return "ACOM_SUCCESS";
+        case EVENT_ACOM_FAILURE:
+            return "ACOM_FAILURE";
+        case EVENT_BATTERY_LOW:
+            return "BATTERY_LOW";
+        case EVENT_OVERTIME_SHUTDOWN:
+            return "OVERTIME_SHUTDOWN";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+const char *stateName(state_t s)
+{
+    switch (s)
+    {
+        case STATE_IDLE:
+            return "IDLE";
+        case STATE_PAIRING:
+            return "PAIRING";
+        case STATE_CONTACT_CARD:
+            return "CONTACT_CARD";
+        case STATE_MENU:
+            return "MENU";
+        case STATE_CONTACT_LIST:
+            return "CONTACT_LIST";
+        case STATE_CONTACT_DETAIL:
+            return "CONTACT_DETAIL";
+        case STATE_MY_PROFILE:
+            return "MY_PROFILE";
+        case STATE_STANDBY:
+            return "STANDBY";
+        case STATE_LOW_BATTERY:
+            return "LOW_BATTERY";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 void fsm_handle_event(event_t event)
 {
     switch (currentState)
@@ -46,7 +114,7 @@ void fsm_handle_event(event_t event)
                     currentState = STATE_PAIRING;
                     stateEnterTime = millis();
                     break;
-                case EVENT_DOWN_CLICK:
+                case EVENT_RIGHT_CLICK:
                     currentState = STATE_MENU;
                     stateEnterTime = millis();
                     break;
@@ -102,10 +170,10 @@ void fsm_handle_event(event_t event)
             switch (event)
             {
                 case EVENT_LEFT_CLICK:
-                case EVENT_UP_CLICK:
                     currentState = STATE_IDLE;
                     stateEnterTime = millis();
                     break;
+                case EVENT_UP_CLICK:
                 case EVENT_DOWN_CLICK:
                     menuOnFriends = !menuOnFriends;
                     break;

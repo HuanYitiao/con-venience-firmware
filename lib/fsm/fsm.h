@@ -33,6 +33,9 @@ typedef enum
     EVENT_OVERTIME_SHUTDOWN
 } event_t;
 
+const char *eventName(event_t e);
+const char *stateName(state_t s);
+
 void    fsm_init();
 void    fsm_handle_event(event_t event);
 state_t fsm_get_state();
