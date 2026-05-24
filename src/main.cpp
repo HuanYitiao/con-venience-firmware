@@ -1,59 +1,54 @@
 #include <Arduino.h>
-#include "driver/uart.h"
+#include "fsm.h"
+#include "button.h"
 
-#define ACOM_TX   22
-#define ACOM_RX   23
-#define ACOM_OE   21  // 74HC126 OE引脚
-#define ACOM_BAUD 9600
+#define PIN_UP      32
+#define PIN_DOWN    33
+#define PIN_PAIR    5
+#define PIN_LEFT    19
+#define PIN_RIGHT   18
 
-void acomTxEnable() {
-  digitalWrite(ACOM_OE, HIGH);  // OE=HIGH，TX信号通过74HC126
-}
-
-void acomTxDisable() {
-  digitalWrite(ACOM_OE, LOW);   // OE=LOW，TX高阻，让开信号线
-}
-
-void acomSend(const char* msg) {
-  // 先听，有数据就不发
-  if (Serial2.available()) return;
-  
-  acomTxEnable();
-  delayMicroseconds(200);
-  Serial2.print(msg);
-  Serial2.flush();
-  acomTxDisable();
-  
-  // 清空自己echo
-  delay(10);
-  while (Serial2.available()) Serial2.read();
-}
+static btn_state_t btnUp    = {};
+static btn_state_t btnDown  = {};
+static btn_state_t btnPair  = {};
+static btn_state_t btnLeft  = {};
+static btn_state_t btnRight = {};
 
 void setup() {
-  Serial.begin(115200);
-  pinMode(ACOM_OE, OUTPUT);
-  acomTxDisable();  // 默认不发送
-  Serial2.begin(ACOM_BAUD, SERIAL_8N1, ACOM_RX, ACOM_TX);
-  Serial.println("ready");
+    Serial.begin(115200);
+    fsm_init();
+
+    pinMode(PIN_UP, INPUT_PULLUP);
+    pinMode(PIN_DOWN, INPUT_PULLUP);
+    pinMode(PIN_PAIR, INPUT_PULLUP);
+    pinMode(PIN_LEFT, INPUT_PULLUP);
+    pinMode(PIN_RIGHT, INPUT_PULLUP);
 }
 
-void loop() {
-  if (Serial2.available()) {
-    String received = "";
-    delay(20);
-    while (Serial2.available()) {
-      received += (char)Serial2.read();
-    }
-    Serial.println("received: " + received);
-    delay(100);
-    acomSend("PONG\n");
-    Serial.println("sent: PONG");
-  }
+void loop()
+{
+    btn_event_t upEvent    = btn_read(PIN_UP,    &btnUp);
+    btn_event_t downEvent  = btn_read(PIN_DOWN,  &btnDown);
+    btn_event_t pairEvent  = btn_read(PIN_PAIR,  &btnPair);
+    btn_event_t leftEvent  = btn_read(PIN_LEFT,  &btnLeft);
+    btn_event_t rightEvent = btn_read(PIN_RIGHT, &btnRight);
 
-  static unsigned long last = 0;
-  if (millis() - last > 3000) {
-    last = millis();
-    acomSend("PING\n");
-    Serial.println("sent: PING");
-  }
+    event_t event;
+    bool hasEvent = false;
+
+    if (upEvent == BTN_CLICK)              { event = EVENT_UP_CLICK;          hasEvent = true; }
+    else if (upEvent == BTN_LONG_PRESS)    { event = EVENT_UP_LONG_PRESS;     hasEvent = true; }
+    else if (downEvent == BTN_CLICK)       { event = EVENT_DOWN_CLICK;        hasEvent = true; }
+    else if (downEvent == BTN_LONG_PRESS)  { event = EVENT_DOWN_LONG_PRESS;   hasEvent = true; }
+    else if (pairEvent == BTN_CLICK)       { event = EVENT_PAIRING_CLICK;     hasEvent = true; }
+    else if (pairEvent == BTN_LONG_PRESS)  { event = EVENT_PAIRING_LONG_PRESS;hasEvent = true; }
+    else if (leftEvent == BTN_CLICK)       { event = EVENT_LEFT_CLICK;        hasEvent = true; }
+    else if (leftEvent == BTN_LONG_PRESS)  { event = EVENT_LEFT_LONG_PRESS;   hasEvent = true; }
+    else if (rightEvent == BTN_CLICK)      { event = EVENT_RIGHT_CLICK;       hasEvent = true; }
+    else if (rightEvent == BTN_LONG_PRESS) { event = EVENT_RIGHT_LONG_PRESS;  hasEvent = true; }
+
+    if (hasEvent) {
+        fsm_handle_event(event);
+        Serial.printf("Event: %d -> State: %d\n", event, fsm_get_state());
+    }
 }
