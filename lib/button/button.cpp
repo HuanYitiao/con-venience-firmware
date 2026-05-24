@@ -1,10 +1,11 @@
-#include <Arduino.h>
 #include "button.h"
+
+#include <Arduino.h>
 
 btn_event_t btn_read(int buttonPin, btn_state_t *state)
 {
     bool current = !digitalRead(buttonPin);
-    
+
     if (current != state->pressed)
     {
         if (millis() - state->debounceTime < 20)
@@ -15,14 +16,14 @@ btn_event_t btn_read(int buttonPin, btn_state_t *state)
     }
 
     state->pressed = current;
-    if (!state->prevPressed && state->pressed) // just pressed
+    if (!state->prevPressed && state->pressed)  // just pressed
     {
         state->prevPressed = true;
         state->pressTime = millis();
         return BTN_NONE;
     }
 
-    if(state->prevPressed && !state->pressed) // just release
+    if (state->prevPressed && !state->pressed)  // just release
     {
         state->prevPressed = false;
         state->releaseTime = millis();
@@ -36,5 +37,4 @@ btn_event_t btn_read(int buttonPin, btn_state_t *state)
         }
     }
     return BTN_NONE;
-    
 }

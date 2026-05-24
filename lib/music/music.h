@@ -3,15 +3,17 @@
 
 #define BUZZER_PIN 18
 
-struct Note {
+struct Note
+{
     int frequency;
     int division;
 };
 
-struct Music {
-    int bpm;
-    Note* melody;
-    int length;
+struct Music
+{
+    int   bpm;
+    Note *melody;
+    int   length;
 };
 
 void playMusic(Music music);

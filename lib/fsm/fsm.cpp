@@ -1,13 +1,15 @@
 #include "fsm.h"
+
 #include <esp32-hal.h>
 
-static state_t currentState = STATE_IDLE;
-static state_t prePairingState = STATE_IDLE;
-static int contactIndex = 0;
+static state_t       currentState = STATE_IDLE;
+static state_t       prePairingState = STATE_IDLE;
+static int           contactIndex = 0;
 static unsigned long stateEnterTime = 0;
-static bool menuOnFriends = true;
+static bool          menuOnFriends = true;
 
-void fsm_init() {
+void fsm_init()
+{
     currentState = STATE_IDLE;
     prePairingState = STATE_IDLE;
     contactIndex = 0;
@@ -24,17 +26,20 @@ int fsm_get_contact_index()
     return contactIndex;
 }
 
-bool fsm_get_menu_selection() {
+bool fsm_get_menu_selection()
+{
     return menuOnFriends;
 }
 
-void fsm_handle_event(event_t event) {
-    switch (currentState) {
-
+void fsm_handle_event(event_t event)
+{
+    switch (currentState)
+    {
         case STATE_IDLE:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_PAIRING_CLICK:
-                    currentState = STATE_IDLE; // Switch between QR code/avatar handled by display
+                    currentState = STATE_IDLE;  // Switch between QR code/avatar handled by display
                     break;
                 case EVENT_PAIRING_LONG_PRESS:
                     prePairingState = currentState;
@@ -58,7 +63,8 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_PAIRING:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_PAIRING_LONG_PRESS:
                     currentState = prePairingState;
                     stateEnterTime = millis();
@@ -81,7 +87,8 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_CONTACT_CARD:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_CARD_OVERTIME:
                     currentState = STATE_IDLE;
                     stateEnterTime = millis();
@@ -92,7 +99,8 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_MENU:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_LEFT_CLICK:
                 case EVENT_UP_CLICK:
                     currentState = STATE_IDLE;
@@ -102,9 +110,12 @@ void fsm_handle_event(event_t event) {
                     menuOnFriends = !menuOnFriends;
                     break;
                 case EVENT_RIGHT_CLICK:
-                    if (menuOnFriends) {
+                    if (menuOnFriends)
+                    {
                         currentState = STATE_CONTACT_LIST;
-                    } else {
+                    }
+                    else
+                    {
                         currentState = STATE_MY_PROFILE;
                     }
                     stateEnterTime = millis();
@@ -122,13 +133,15 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_CONTACT_LIST:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_LEFT_CLICK:
                     currentState = STATE_MENU;
                     stateEnterTime = millis();
                     break;
                 case EVENT_UP_CLICK:
-                    if (contactIndex > 0) contactIndex--;
+                    if (contactIndex > 0)
+                        contactIndex--;
                     break;
                 case EVENT_DOWN_CLICK:
                     contactIndex++;
@@ -150,7 +163,8 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_CONTACT_DETAIL:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_LEFT_CLICK:
                     currentState = STATE_CONTACT_LIST;
                     stateEnterTime = millis();
@@ -168,7 +182,8 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_MY_PROFILE:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_LEFT_CLICK:
                     currentState = STATE_MENU;
                     stateEnterTime = millis();
@@ -186,7 +201,8 @@ void fsm_handle_event(event_t event) {
             break;
 
         case STATE_STANDBY:
-            switch (event) {
+            switch (event)
+            {
                 case EVENT_PAIRING_LONG_PRESS:
                     currentState = STATE_IDLE;
                     stateEnterTime = millis();

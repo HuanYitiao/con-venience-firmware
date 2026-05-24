@@ -1,6 +1,7 @@
 #pragma once
 
-typedef enum {
+typedef enum
+{
     STATE_IDLE,
     STATE_PAIRING,
     STATE_CONTACT_CARD,
@@ -12,7 +13,8 @@ typedef enum {
     STATE_LOW_BATTERY
 } state_t;
 
-typedef enum {
+typedef enum
+{
     EVENT_PAIRING_CLICK,
     EVENT_PAIRING_LONG_PRESS,
     EVENT_PAIRING_OVERTIME,
@@ -31,8 +33,8 @@ typedef enum {
     EVENT_OVERTIME_SHUTDOWN
 } event_t;
 
-void fsm_init();
-void fsm_handle_event(event_t event);
+void    fsm_init();
+void    fsm_handle_event(event_t event);
 state_t fsm_get_state();
-int fsm_get_contact_index();
-bool fsm_get_menu_selection(); // true = Friends, false = MyProfile
+int     fsm_get_contact_index();
+bool    fsm_get_menu_selection();  // true = Friends, false = MyProfile
