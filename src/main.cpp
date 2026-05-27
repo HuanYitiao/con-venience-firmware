@@ -1,7 +1,9 @@
 #include <Arduino.h>
 
 #include "button.h"
+#include "display.h"
 #include "fsm.h"
+#include "storage.h"
 
 #define PIN_UP 2
 #define PIN_DOWN 3
@@ -15,10 +17,19 @@ static btn_state_t btnPair = {};
 static btn_state_t btnLeft = {};
 static btn_state_t btnRight = {};
 
+static Contact self = {};
+static Contact contacts[16] = {};
+static int     contactCount = 0;
+static bool    idleShowQR = false;
+
 void setup()
 {
     Serial0.begin(115200);
     fsm_init();
+    storageInit();
+    storageLoadSelf(self);
+    contactCount = storageLoadContacts(contacts, 16);
+    displayInit();
 
     pinMode(PIN_UP, INPUT_PULLUP);
     pinMode(PIN_DOWN, INPUT_PULLUP);
@@ -26,7 +37,7 @@ void setup()
     pinMode(PIN_LEFT, INPUT_PULLUP);
     pinMode(PIN_RIGHT, INPUT_PULLUP);
 
-    Serial0.println("con-venience FSM test ready");
+    Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsm_get_state()));
 }
 
@@ -99,19 +110,19 @@ void loop()
         state_t after = fsm_get_state();
 
         if (before != after)
-        {
             Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                            stateName(after));
-        }
         else
-        {
             Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
-        }
 
         if (after == STATE_MENU)
-        {
             Serial0.printf("[MENU]  selection: %s\n",
                            fsm_get_menu_selection() ? "Friends" : "My Profile");
-        }
+
+        if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
+            idleShowQR = !idleShowQR;
     }
+
+    displayRender(fsm_get_state(), self, contacts, contactCount, fsm_get_contact_index(),
+                  fsm_get_menu_selection(), idleShowQR);
 }
