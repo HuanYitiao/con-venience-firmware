@@ -11,7 +11,7 @@ bool storageInit()
 {
     if (!LittleFS.begin(true))
     {
-        Serial.println("LittleFS mount failed");
+        Serial0.println("LittleFS mount failed");
         return false;
     }
     if (!LittleFS.exists(CONTACTS_DIR))

@@ -3,11 +3,11 @@
 #include "button.h"
 #include "fsm.h"
 
-#define PIN_UP 32
-#define PIN_DOWN 33
-#define PIN_PAIR 5
+#define PIN_UP 2
+#define PIN_DOWN 3
+#define PIN_PAIR 21
 #define PIN_LEFT 19
-#define PIN_RIGHT 18
+#define PIN_RIGHT 20
 
 static btn_state_t btnUp = {};
 static btn_state_t btnDown = {};
@@ -17,7 +17,7 @@ static btn_state_t btnRight = {};
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial0.begin(115200);
     fsm_init();
 
     pinMode(PIN_UP, INPUT_PULLUP);
@@ -26,8 +26,8 @@ void setup()
     pinMode(PIN_LEFT, INPUT_PULLUP);
     pinMode(PIN_RIGHT, INPUT_PULLUP);
 
-    Serial.println("con-venience FSM test ready");
-    Serial.printf("Initial state: %s\n", stateName(fsm_get_state()));
+    Serial0.println("con-venience FSM test ready");
+    Serial0.printf("Initial state: %s\n", stateName(fsm_get_state()));
 }
 
 void loop()
@@ -100,18 +100,18 @@ void loop()
 
         if (before != after)
         {
-            Serial.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
-                          stateName(after));
+            Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
+                           stateName(after));
         }
         else
         {
-            Serial.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
+            Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
         }
 
         if (after == STATE_MENU)
         {
-            Serial.printf("[MENU]  selection: %s\n",
-                          fsm_get_menu_selection() ? "Friends" : "My Profile");
+            Serial0.printf("[MENU]  selection: %s\n",
+                           fsm_get_menu_selection() ? "Friends" : "My Profile");
         }
     }
 }
