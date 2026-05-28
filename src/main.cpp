@@ -110,17 +110,26 @@ void loop()
         state_t after = fsm_get_state();
 
         if (before != after)
+        {
+            displayResetScroll();
             Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                            stateName(after));
+        }
         else
+        {
             Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
+        }
 
         if (after == STATE_MENU)
+        {
             Serial0.printf("[MENU]  selection: %s\n",
                            fsm_get_menu_selection() ? "Friends" : "My Profile");
+        }
 
         if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
+        {
             idleShowQR = !idleShowQR;
+        }
     }
 
     displayRender(fsm_get_state(), self, contacts, contactCount, fsm_get_contact_index(),

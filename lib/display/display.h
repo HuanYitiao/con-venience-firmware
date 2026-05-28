@@ -30,3 +30,4 @@ void drawContactDetail(const Contact &contact);
 void drawMyProfile(const Contact &self);
 void drawStandby();
 void drawLowBattery();
+void displayResetScroll();

@@ -2,6 +2,10 @@
 
 #include "qrcode.h"
 
+#define PAIRING_FRAME_INTERVAL 200  // ms
+#define SCROLL_INTERVAL 100
+#define SCROLL_PAUSE 1000
+
 static U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R2,
                                                     /* cs  */ PIN_CS,
                                                     /* dc  */ PIN_DC,
@@ -9,7 +13,47 @@ static U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R2,
 
 static uint8_t       pairingFrame = 0;
 static unsigned long lastFrameTime = 0;
-#define PAIRING_FRAME_INTERVAL 200  // ms
+
+static int           scrollOffset = 0;
+static unsigned long lastScrollTime = 0;
+static bool          scrollPaused = false;
+static unsigned long scrollPauseStart = 0;
+
+static void drawScrollingStr(int x, int y, int maxWidth, const char *str)
+{
+    int strW = u8g2.getStrWidth(str);
+    if (strW <= maxWidth)
+    {
+        u8g2.drawStr(x, y, str);
+        return;
+    }
+    unsigned long now = millis();
+    if (scrollPaused)
+    {
+        if (now - scrollPauseStart > SCROLL_PAUSE)
+        {
+            scrollPaused = false;
+            scrollOffset = 0;
+            lastScrollTime = now;
+        }
+    }
+    else
+    {
+        if (now - lastScrollTime > SCROLL_INTERVAL)
+        {
+            scrollOffset++;
+            lastScrollTime = now;
+            if (scrollOffset >= strW - maxWidth)
+            {
+                scrollPaused = true;
+                scrollPauseStart = now;
+            }
+        }
+    }
+    u8g2.setClipWindow(x, y - 12, x + maxWidth, y + 2);
+    u8g2.drawStr(x - scrollOffset, y, str);
+    u8g2.setMaxClipWindow();
+}
 
 static void drawAvatar(int drawX, int drawY, const uint8_t *avatar)
 {
@@ -263,18 +307,25 @@ void drawMyProfile(const Contact &self)
 {
     u8g2.clearBuffer();
 
-    drawAvatar(2, (DISPLAY_HEIGHT - 32) / 2, self.avatar);
+    int avatarX = 0;
+    for (int y = 0; y < 64; y++)
+    {
+        for (int x = 0; x < 64; x++)
+        {
+            int     bitIndex = y * 64 + x;
+            uint8_t byte = self.avatar[bitIndex / 8];
+            uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
+            if (bit)
+                u8g2.drawPixel(avatarX + x, y);
+        }
+    }
 
     u8g2.setFont(u8g2_font_7x13B_tr);
-    u8g2.drawStr(38, 14, self.username);
+    drawScrollingStr(64, 14, 64, self.username);  // maxWidth=64，右半边宽度
 
-    u8g2.setFont(u8g2_font_6x10_tr);
     char urlShort[18];
     strlcpy(urlShort, self.url, sizeof(urlShort));
-    u8g2.drawStr(38, 28, urlShort);
-
-    // Edit提示
-    u8g2.drawStr(38, 52, "[Edit via BLE]");
+    drawScrollingStr(64, 28, 64, self.url);
 
     u8g2.sendBuffer();
 }
@@ -332,4 +383,11 @@ void displayRender(state_t state, const Contact &self, const Contact *contacts, 
             drawLowBattery();
             break;
     }
+}
+
+void displayResetScroll()
+{
+    scrollPaused = false;
+    scrollOffset = 0;
+    lastScrollTime = 0;
 }
