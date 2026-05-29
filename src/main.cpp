@@ -3,6 +3,7 @@
 #include "button.h"
 #include "display.h"
 #include "fsm.h"
+#include "led.h"
 #include "storage.h"
 
 #define PIN_UP 2
