@@ -25,6 +25,11 @@ static bool    idleShowQR = false;
 
 void setup()
 {
+    ledInit();
+    ledSetColor(0, 255, 0, 50);
+    delay(500);
+    ledOff();
+
     Serial0.begin(115200);
     fsm_init();
     storageInit();

@@ -13,7 +13,7 @@ void ledInit()
     rgbLed.show();
 }
 
-void setColor(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness)
+void ledSetColor(uint8_t r, uint8_t g, uint8_t b, uint8_t brightness)
 {
     uint32_t color = rgbLed.Color((uint16_t)r * brightness / 100, (uint16_t)g * brightness / 100,
                                   (uint16_t)b * brightness / 100);
