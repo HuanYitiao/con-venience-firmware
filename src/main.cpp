@@ -1,4 +1,4 @@
-/*#include <Arduino.h>
+#include <Arduino.h>
 
 #include "button.h"
 #include "display.h"
@@ -140,56 +140,4 @@ void loop()
 
     displayRender(fsm_get_state(), self, contacts, contactCount, fsm_get_contact_index(),
                   fsm_get_menu_selection(), idleShowQR);
-}*/
-
-#include <SD.h>
-#include <SPI.h>
-
-#define PIN_SD_CS 22  // 先试22
-
-void setup()
-{
-    Serial0.begin(115200);
-    SPI.begin(10, 15, 11, 22);  // SCK, MISO, MOSI, CS
-
-    if (!SD.begin(PIN_SD_CS))
-    {
-        Serial0.println("SD init failed");
-    }
-    else
-    {
-        Serial0.println("SD init OK");
-    }
-
-    if (SD.begin(PIN_SD_CS))
-    {
-        Serial0.println("SD init OK");
-
-        File f = SD.open("/test.txt", FILE_WRITE);
-        if (f)
-        {
-            f.println("hello");
-            f.close();
-            Serial0.println("Write OK");
-        }
-        else
-        {
-            Serial0.println("Write FAILED");
-        }
-
-        File f2 = SD.open("/test.txt");
-        if (f2)
-        {
-            Serial0.println(f2.readString());
-            f2.close();
-        }
-        else
-        {
-            Serial0.println("Read FAILED");
-        }
-    }
-}
-
-void loop()
-{
 }
