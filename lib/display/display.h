@@ -17,10 +17,9 @@
 #define PIN_DC 23
 
 void displayInit();
-
-void displayRender(state_t state, const Contact &self, const Contact *contacts, int contactCount,
-                   int contactIndex, bool menuSelection, bool idleShowQR);
-
+void displayRender(state_t state, const Contact &self, const Contact &currentContact,
+                   const char contactNames[][USERNAME_LEN], int contactCount, int contactIndex,
+                   bool menuSelection, bool idleShowQR);
 void drawHomepage(const Contact &self);
 void drawPairing(const Contact &self);
 void drawContactCard(const Contact &contact);

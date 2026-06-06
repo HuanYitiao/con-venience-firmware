@@ -19,7 +19,8 @@ static btn_state_t btnLeft = {};
 static btn_state_t btnRight = {};
 
 static Contact self = {};
-static Contact contacts[16] = {};
+static Contact currentContact = {};
+static char    contactNames[16][USERNAME_LEN] = {};
 static int     contactCount = 0;
 static bool    idleShowQR = false;
 
@@ -33,8 +34,19 @@ void setup()
     Serial0.begin(115200);
     fsm_init();
     storageInit();
+    Serial0.println("storage init OK");
     storageLoadSelf(self);
-    contactCount = storageLoadContacts(contacts, 16);
+    Serial0.printf("self username: %s\n", self.username);
+    Serial0.printf("self avatar size: %d\n", sizeof(self.avatar));
+    Serial0.println("load self OK");
+    contactCount = storageCountContacts();
+    Serial0.printf("contact count: %d\n", contactCount);
+    for (int i = 0; i < contactCount; i++)
+    {
+        storageLoadContactName(i, contactNames[i], USERNAME_LEN);
+        Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
+    }
+    Serial0.println("all names loaded");
     displayInit();
 
     pinMode(PIN_UP, INPUT_PULLUP);
@@ -138,6 +150,15 @@ void loop()
         }
     }
 
-    displayRender(fsm_get_state(), self, contacts, contactCount, fsm_get_contact_index(),
-                  fsm_get_menu_selection(), idleShowQR);
+    static int lastContactIndex = -1;
+    int        currentIndex = fsm_get_contact_index();
+    if (contactCount > 0 && currentIndex != lastContactIndex)
+    {
+        bool ok = storageLoadContact(currentIndex, currentContact);
+        Serial0.printf("loadContact %d: %s\n", currentIndex, ok ? "OK" : "FAIL");
+        lastContactIndex = currentIndex;
+    }
+
+    displayRender(fsm_get_state(), self, currentContact, contactNames, contactCount,
+                  fsm_get_contact_index(), fsm_get_menu_selection(), idleShowQR);
 }

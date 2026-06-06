@@ -1,9 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
+#define PIN_SD_CS 22
+
 #define UUID_LEN 11
 #define USERNAME_LEN 32
-#define AVATAR_LEN 512  // 64x64 1bit
+#define AVATAR_LEN 512
 #define URL_LEN 128
 
 typedef struct
@@ -14,14 +16,12 @@ typedef struct
     uint8_t avatar[AVATAR_LEN];
 } Contact;
 
-bool storageInit();
+bool storageInit(uint8_t csPin = PIN_SD_CS);
 
-bool storageSaveSelf(const Contact &contact);
-
+// bool storageSaveSelf(const Contact &contact);
 bool storageLoadSelf(Contact &contact);
 
 bool storageSaveContact(const Contact &contact);
-
-int storageLoadContacts(Contact *contacts, int maxCount);
-
-int storageCountContacts();
+bool storageLoadContact(int index, Contact &contact);
+int  storageCountContacts();
+bool storageLoadContactName(int index, char *username, int maxLen);

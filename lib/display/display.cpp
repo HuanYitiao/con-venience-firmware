@@ -269,13 +269,13 @@ void drawMenu(bool menuSelection)
 }
 
 // ── contact list ──────────────────────────────────────────
-void drawContactList(const Contact *contacts, int count, int index)
+void drawContactList(const char names[][USERNAME_LEN], int count, int index)
 {
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x10_tr);
 
     const int lineH = 12;
-    const int visibleLines = DISPLAY_HEIGHT / lineH;  // 5行
+    const int visibleLines = DISPLAY_HEIGHT / lineH;
     int       scrollOffset = 0;
     if (index >= visibleLines)
         scrollOffset = index - visibleLines + 1;
@@ -289,7 +289,7 @@ void drawContactList(const Contact *contacts, int count, int index)
             u8g2.drawBox(0, y - 10, DISPLAY_WIDTH, lineH);
             u8g2.setDrawColor(0);
         }
-        u8g2.drawStr(4, y, contacts[ci].username);
+        u8g2.drawStr(4, y, names[ci]);
         u8g2.setDrawColor(1);
     }
 
@@ -299,7 +299,7 @@ void drawContactList(const Contact *contacts, int count, int index)
 // ── contact detail ────────────────────────────────────────
 void drawContactDetail(const Contact &contact)
 {
-    drawContactCard(contact);  // 布局相同
+    drawContactCard(contact);
 }
 
 // ── my profile ────────────────────────────────────────────
@@ -350,8 +350,9 @@ void drawLowBattery()
     u8g2.sendBuffer();
 }
 
-void displayRender(state_t state, const Contact &self, const Contact *contacts, int contactCount,
-                   int contactIndex, bool menuSelection, bool idleShowQR)
+void displayRender(state_t state, const Contact &self, const Contact &currentContact,
+                   const char contactNames[][USERNAME_LEN], int contactCount, int contactIndex,
+                   bool menuSelection, bool idleShowQR)
 {
     switch (state)
     {
@@ -362,16 +363,16 @@ void displayRender(state_t state, const Contact &self, const Contact *contacts, 
             drawPairing(self);
             break;
         case STATE_CONTACT_CARD:
-            drawContactCard(contacts[contactIndex]);
+            drawContactCard(currentContact);
             break;
         case STATE_MENU:
             drawMenu(menuSelection);
             break;
         case STATE_CONTACT_LIST:
-            drawContactList(contacts, contactCount, contactIndex);
+            drawContactList(contactNames, contactCount, contactIndex);
             break;
         case STATE_CONTACT_DETAIL:
-            drawContactDetail(contacts[contactIndex]);
+            drawContactDetail(currentContact);
             break;
         case STATE_MY_PROFILE:
             drawMyProfile(self);
