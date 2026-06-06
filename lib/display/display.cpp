@@ -19,12 +19,40 @@ static unsigned long lastScrollTime = 0;
 static bool          scrollPaused = false;
 static unsigned long scrollPauseStart = 0;
 
+static void utf8ToLatin1(const char *src, char *dst, size_t dstLen)
+{
+    size_t i = 0;
+    while (*src && i < dstLen - 1)
+    {
+        uint8_t c = (uint8_t)*src;
+        if (c < 0x80)
+        {
+            dst[i++] = c;
+            src++;
+        }
+        else if (c == 0xC3 && (uint8_t)*(src + 1) >= 0x80)
+        {
+            dst[i++] = (uint8_t)*(src + 1) + 0x40;
+            src += 2;
+        }
+        else
+        {
+            dst[i++] = '?';
+            src++;
+        }
+    }
+    dst[i] = 0;
+}
+
 static void drawScrollingStr(int x, int y, int maxWidth, const char *str)
 {
-    int strW = u8g2.getStrWidth(str);
+    char converted[128];
+    utf8ToLatin1(str, converted, sizeof(converted));
+
+    int strW = u8g2.getStrWidth(converted);
     if (strW <= maxWidth)
     {
-        u8g2.drawStr(x, y, str);
+        u8g2.drawStr(x, y, converted);
         return;
     }
     unsigned long now = millis();
@@ -51,7 +79,7 @@ static void drawScrollingStr(int x, int y, int maxWidth, const char *str)
         }
     }
     u8g2.setClipWindow(x, y - 12, x + maxWidth, y + 2);
-    u8g2.drawStr(x - scrollOffset, y, str);
+    u8g2.drawStr(x - scrollOffset, y, converted);
     u8g2.setMaxClipWindow();
 }
 
@@ -229,15 +257,24 @@ void drawContactCard(const Contact &contact)
 {
     u8g2.clearBuffer();
 
-    drawAvatar(2, (DISPLAY_HEIGHT - 32) / 2, contact.avatar);
+    int avatarX = 0;
+    for (int y = 0; y < 64; y++)
+    {
+        for (int x = 0; x < 64; x++)
+        {
+            int     bitIndex = y * 64 + x;
+            uint8_t byte = contact.avatar[bitIndex / 8];
+            uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
+            if (bit)
+                u8g2.drawPixel(avatarX + x, y);
+        }
+    }
 
-    u8g2.setFont(u8g2_font_7x13B_tr);
-    u8g2.drawStr(38, 14, contact.username);
+    u8g2.setFont(u8g2_font_7x13B_tf);
+    drawScrollingStr(64, 14, 64, contact.username);
 
-    u8g2.setFont(u8g2_font_6x10_tr);
-    char urlShort[18];
-    strlcpy(urlShort, contact.url, sizeof(urlShort));
-    u8g2.drawStr(38, 28, urlShort);
+    u8g2.setFont(u8g2_font_6x10_tf);
+    drawScrollingStr(64, 28, 64, contact.url);
 
     u8g2.sendBuffer();
 }
@@ -247,7 +284,7 @@ void drawMenu(bool menuSelection)
 {
     u8g2.clearBuffer();
 
-    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.setFont(u8g2_font_6x10_tf);
 
     if (menuSelection)
     {
@@ -272,24 +309,34 @@ void drawMenu(bool menuSelection)
 void drawContactList(const char names[][USERNAME_LEN], int count, int index)
 {
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.setFont(u8g2_font_6x10_tf);
 
     const int lineH = 12;
     const int visibleLines = DISPLAY_HEIGHT / lineH;
-    int       scrollOffset = 0;
+    int       listOffset = 0;
     if (index >= visibleLines)
-        scrollOffset = index - visibleLines + 1;
+        listOffset = index - visibleLines + 1;
 
-    for (int i = 0; i < visibleLines && (i + scrollOffset) < count; i++)
+    for (int i = 0; i < visibleLines && (i + listOffset) < count; i++)
     {
-        int ci = i + scrollOffset;
-        int y = (i + 1) * lineH;
-        if (ci == index)
+        int  ci = i + listOffset;
+        int  y = (i + 1) * lineH;
+        bool selected = (ci == index);
+
+        if (selected)
         {
             u8g2.drawBox(0, y - 10, DISPLAY_WIDTH, lineH);
             u8g2.setDrawColor(0);
         }
-        u8g2.drawStr(4, y, names[ci]);
+
+        char converted[USERNAME_LEN];
+        utf8ToLatin1(names[ci], converted, sizeof(converted));
+
+        if (selected)
+            u8g2.drawStr(4, y, converted);
+        else
+            drawScrollingStr(4, y, DISPLAY_WIDTH - 8, converted);
+
         u8g2.setDrawColor(1);
     }
 
@@ -319,11 +366,11 @@ void drawMyProfile(const Contact &self)
                 u8g2.drawPixel(avatarX + x, y);
         }
     }
-
-    u8g2.setFont(u8g2_font_7x13B_tr);
-    drawScrollingStr(64, 14, 64, self.username);  // maxWidth=64，右半边宽度
+    u8g2.setFont(u8g2_font_7x13B_tf);
+    drawScrollingStr(64, 14, 64, self.username);
 
     char urlShort[18];
+    u8g2.setFont(u8g2_font_6x10_tf);
     strlcpy(urlShort, self.url, sizeof(urlShort));
     drawScrollingStr(64, 28, 64, self.url);
 
@@ -341,10 +388,10 @@ void drawStandby()
 void drawLowBattery()
 {
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_7x13B_tr);
+    u8g2.setFont(u8g2_font_7x13B_tf);
     int w = u8g2.getStrWidth("Low Battery");
     u8g2.drawStr((DISPLAY_WIDTH - w) / 2, 28, "Low Battery");
-    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.setFont(u8g2_font_6x10_tf);
     w = u8g2.getStrWidth("Please charge");
     u8g2.drawStr((DISPLAY_WIDTH - w) / 2, 44, "Please charge");
     u8g2.sendBuffer();
