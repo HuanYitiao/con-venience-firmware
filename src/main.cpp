@@ -1,4 +1,4 @@
-#include <Arduino.h>
+/*#include <Arduino.h>
 
 #include "button.h"
 #include "display.h"
@@ -34,19 +34,13 @@ void setup()
     Serial0.begin(115200);
     fsm_init();
     storageInit();
-    Serial0.println("storage init OK");
     storageLoadSelf(self);
-    Serial0.printf("self username: %s\n", self.username);
-    Serial0.printf("self avatar size: %d\n", sizeof(self.avatar));
-    Serial0.println("load self OK");
     contactCount = storageCountContacts();
-    Serial0.printf("contact count: %d\n", contactCount);
     for (int i = 0; i < contactCount; i++)
     {
         storageLoadContactName(i, contactNames[i], USERNAME_LEN);
         Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
     }
-    Serial0.println("all names loaded");
     displayInit();
 
     pinMode(PIN_UP, INPUT_PULLUP);
@@ -161,4 +155,34 @@ void loop()
 
     displayRender(fsm_get_state(), self, currentContact, contactNames, contactCount,
                   fsm_get_contact_index(), fsm_get_menu_selection(), idleShowQR);
+}*/
+#include <Arduino.h>
+
+#include <NimBLEDevice.h>
+
+#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+
+void setup()
+{
+    Serial0.begin(115200);
+    BLEDevice::init("con-venience");
+
+    BLEServer         *pServer = BLEDevice::createServer();
+    BLEService        *pService = pServer->createService(SERVICE_UUID);
+    BLECharacteristic *pCharacteristic =
+        pService->createCharacteristic(CHARACTERISTIC_UUID, NIMBLE_PROPERTY::READ);
+    pCharacteristic->setValue("hello from con-venience");
+    pService->start();
+
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    BLEDevice::startAdvertising();
+
+    Serial0.println("BLE advertising...");
+    Serial0.printf("MAC: %s\n", BLEDevice::getAddress().toString().c_str());
+}
+
+void loop()
+{
 }
