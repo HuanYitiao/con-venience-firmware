@@ -156,6 +156,9 @@ void loop()
     displayRender(fsm_get_state(), self, currentContact, contactNames, contactCount,
                   fsm_get_contact_index(), fsm_get_menu_selection(), idleShowQR);
 }*/
+
+/*
+// main MAC address: 48:f6:ee:c7:15:0e
 #include <Arduino.h>
 
 #include <NimBLEDevice.h>
@@ -166,21 +169,78 @@ void loop()
 void setup()
 {
     Serial0.begin(115200);
-    BLEDevice::init("con-venience");
+    Serial0.println("code start...");
+    NimBLEDevice::init("con-venience");
 
-    BLEServer         *pServer = BLEDevice::createServer();
-    BLEService        *pService = pServer->createService(SERVICE_UUID);
-    BLECharacteristic *pCharacteristic =
+    NimBLEServer         *pServer = NimBLEDevice::createServer();
+    NimBLEService        *pService = pServer->createService(SERVICE_UUID);
+    NimBLECharacteristic *pCharacteristic =
         pService->createCharacteristic(CHARACTERISTIC_UUID, NIMBLE_PROPERTY::READ);
     pCharacteristic->setValue("hello from con-venience");
     pService->start();
 
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
-    BLEDevice::startAdvertising();
+    pAdvertising->setMinInterval(100);
+    pAdvertising->setMaxInterval(200);
+    pAdvertising->start(0);
 
     Serial0.println("BLE advertising...");
-    Serial0.printf("MAC: %s\n", BLEDevice::getAddress().toString().c_str());
+    Serial0.printf("MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
+}
+
+void loop()
+{
+}*/
+
+// client mac address:
+#include <Arduino.h>
+
+#include <NimBLEDevice.h>
+
+#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+
+static NimBLEAddress targetAddress("48:f6:ee:c7:15:0e", BLE_ADDR_PUBLIC);
+
+void setup()
+{
+    Serial0.begin(115200);
+    NimBLEDevice::init("con-venience-client");
+
+    Serial0.println("Scanning...");
+    NimBLEScan       *pScan = NimBLEDevice::getScan();
+    NimBLEScanResults results = pScan->getResults(5000);
+
+    for (int i = 0; i < results.getCount(); i++)
+    {
+        const NimBLEAdvertisedDevice *device = results.getDevice(i);
+        Serial0.printf("Found: %s\n", device->getAddress().toString().c_str());
+        if (device->getAddress() == targetAddress)
+        {
+            Serial0.println("Found target device!");
+
+            NimBLEClient *pClient = NimBLEDevice::createClient();
+            if (pClient->connect(device))
+            {
+                Serial0.println("Connected!");
+
+                NimBLERemoteService *pService = pClient->getService(SERVICE_UUID);
+                if (pService)
+                {
+                    NimBLERemoteCharacteristic *pChar =
+                        pService->getCharacteristic(CHARACTERISTIC_UUID);
+                    if (pChar && pChar->canRead())
+                    {
+                        std::string value = pChar->readValue();
+                        Serial0.printf("Value: %s\n", value.c_str());
+                    }
+                }
+                pClient->disconnect();
+            }
+            break;
+        }
+    }
 }
 
 void loop()
