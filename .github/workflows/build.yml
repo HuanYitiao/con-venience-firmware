@@ -1,0 +1,18 @@
+name: Build Firmware
+on:
+  push:
+  pull_request:
+jobs:
+  build-platformio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ hashFiles('platformio.ini') }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio
+      - run: platformio run
