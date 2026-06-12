@@ -4,19 +4,8 @@
 #include <SD.h>
 #include <SPI.h>
 
-#define SELF_JSON "/self_profile/profile.json"
-#define SELF_BIN "/self_profile/avatar.bin"
-#define FRIENDS_DIR "/friends_profiles"
-
-#define PIN_SCK 10
-#define PIN_MISO 15
-#define PIN_MOSI 11
-
-#define PATH_LEN 96
-
 bool storageInit(uint8_t csPin)
 {
-    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, csPin);
     if (!SD.begin(csPin))
     {
         Serial0.println("SD init failed");
@@ -39,15 +28,31 @@ bool storageLoadSelf(Contact &contact)
     JsonDocument doc;
     deserializeJson(doc, selfJson);
     selfJson.close();
-    strlcpy(contact.username, doc["username"], USERNAME_LEN);
-    strlcpy(contact.url, doc["url"] | "", URL_LEN);
+    strlcpy(contact.uuid, doc["uuid"], UUID_LEN);
+    strlcpy(contact.name, doc["name"], NAME_LEN);
+    strlcpy(contact.species, doc["species"], SPECIES_LEN);
+    strlcpy(contact.from, doc["from"], FROM_LEN);
+    contact.linkCount = 0;
+    JsonArray links = doc["links"].as<JsonArray>();
+    for (JsonObject link : links)
+    {
+        if (contact.linkCount >= LINKS_MAX)
+        {
+            break;
+        }
+        strlcpy(contact.links[contact.linkCount].tag, link["tag"] | "", TAG_LEN);
+        strlcpy(contact.links[contact.linkCount].url, link["url"] | "", URL_LEN);
+        contact.linkCount++;
+    }
+    contact.avatarResolution = doc["avatar_res"] | 0;
+    contact.avatarMode = (AvatarMode)(doc["avatar_mode"] | 0);
 
     File selfBin = SD.open(SELF_BIN, FILE_READ);
     if (!selfBin)
     {
         return false;
     }
-    selfBin.read(contact.avatar, AVATAR_LEN);
+    selfBin.read(contact.avatar, avatarLen(contact.avatarResolution, contact.avatarMode));
     selfBin.close();
     return true;
 }
@@ -57,9 +62,9 @@ bool storageSaveContact(const Contact &contact)
     char jsonPath[PATH_LEN];
     char binPath[PATH_LEN];
     char dirPath[PATH_LEN];
-    snprintf(dirPath, sizeof(dirPath), "%s/%s", FRIENDS_DIR, contact.username);
-    snprintf(jsonPath, sizeof(jsonPath), "%s/%s/profile.json", FRIENDS_DIR, contact.username);
-    snprintf(binPath, sizeof(binPath), "%s/%s/avatar.bin", FRIENDS_DIR, contact.username);
+    snprintf(dirPath, sizeof(dirPath), "%s/%s", FRIENDS_DIR, contact.uuid);
+    snprintf(jsonPath, sizeof(jsonPath), "%s/%s/profile.json", FRIENDS_DIR, contact.uuid);
+    snprintf(binPath, sizeof(binPath), "%s/%s/avatar.bin", FRIENDS_DIR, contact.uuid);
     SD.mkdir(dirPath);
     SD.remove(jsonPath);
     SD.remove(binPath);
@@ -70,8 +75,19 @@ bool storageSaveContact(const Contact &contact)
         return false;
     }
     JsonDocument doc;
-    doc["username"] = contact.username;
-    doc["url"] = contact.url;
+    doc["uuid"] = contact.uuid;
+    doc["species"] = contact.species;
+    doc["name"] = contact.name;
+    doc["from"] = contact.from;
+    doc["avatar_res"] = contact.avatarResolution;
+    doc["avatar_mode"] = contact.avatarMode;
+    JsonArray links = doc["links"].to<JsonArray>();
+    for (int i = 0; i < contact.linkCount; i++)
+    {
+        JsonObject link = links.add<JsonObject>();
+        link["tag"] = contact.links[i].tag;
+        link["url"] = contact.links[i].url;
+    }
     serializeJson(doc, friendJson);
     friendJson.close();
 
@@ -80,7 +96,7 @@ bool storageSaveContact(const Contact &contact)
     {
         return false;
     }
-    friendBin.write(contact.avatar, AVATAR_LEN);
+    friendBin.write(contact.avatar, avatarLen(contact.avatarResolution, contact.avatarMode));
     friendBin.close();
     return true;
 }
@@ -120,15 +136,31 @@ bool storageLoadContact(int index, Contact &contact)
     File         jsonFile = SD.open(jsonPath, FILE_READ);
     deserializeJson(doc, jsonFile);
     jsonFile.close();
-    strlcpy(contact.username, doc["username"], USERNAME_LEN);
-    strlcpy(contact.url, doc["url"] | "", URL_LEN);
+    strlcpy(contact.name, doc["name"], NAME_LEN);
+    strlcpy(contact.from, doc["from"] | "", FROM_LEN);
+    strlcpy(contact.uuid, doc["uuid"] | "", UUID_LEN);
+    strlcpy(contact.species, doc["species"] | "", SPECIES_LEN);
+    contact.linkCount = 0;
+    JsonArray links = doc["links"].as<JsonArray>();
+    for (JsonObject link : links)
+    {
+        if (contact.linkCount >= LINKS_MAX)
+        {
+            break;
+        }
+        strlcpy(contact.links[contact.linkCount].tag, link["tag"] | "", TAG_LEN);
+        strlcpy(contact.links[contact.linkCount].url, link["url"] | "", URL_LEN);
+        contact.linkCount++;
+    }
+    contact.avatarResolution = doc["avatar_res"] | 0;
+    contact.avatarMode = (AvatarMode)(doc["avatar_mode"] | 0);
 
     File friendBin = SD.open(binPath, FILE_READ);
     if (!friendBin)
     {
         return false;
     }
-    friendBin.read(contact.avatar, AVATAR_LEN);
+    friendBin.read(contact.avatar, avatarLen(contact.avatarResolution, contact.avatarMode));
     friendBin.close();
 
     file.close();
@@ -148,6 +180,7 @@ int storageCountContacts()
     File entry = dir.openNextFile();
     while (entry)
     {
+        Serial0.printf("entry: %s isDir=%d\n", entry.name(), entry.isDirectory());
         if (entry.isDirectory())
         {
             count++;
@@ -189,7 +222,7 @@ bool storageLoadContactName(int index, char *username, int maxLen)
                 JsonDocument doc;
                 deserializeJson(doc, jsonFile);
                 jsonFile.close();
-                strlcpy(username, doc["username"] | "", maxLen);
+                strlcpy(username, doc["name"] | "", maxLen);
                 return true;
             }
             count++;

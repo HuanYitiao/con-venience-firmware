@@ -1,4 +1,4 @@
-/*#include <Arduino.h>
+#include <Arduino.h>
 
 #include "button.h"
 #include "display.h"
@@ -12,6 +12,10 @@
 #define PIN_LEFT 19
 #define PIN_RIGHT 20
 
+#define PIN_SCK 10
+#define PIN_MISO 15
+#define PIN_MOSI 11
+
 static btn_state_t btnUp = {};
 static btn_state_t btnDown = {};
 static btn_state_t btnPair = {};
@@ -20,7 +24,7 @@ static btn_state_t btnRight = {};
 
 static Contact self = {};
 static Contact currentContact = {};
-static char    contactNames[16][USERNAME_LEN] = {};
+static char    contactNames[16][NAME_LEN] = {};
 static int     contactCount = 0;
 static bool    idleShowQR = false;
 
@@ -33,12 +37,16 @@ void setup()
 
     Serial0.begin(115200);
     fsm_init();
+    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
     storageInit();
     storageLoadSelf(self);
+    Serial0.printf("self: name=%s res=%d links=%d\n", self.name, self.avatarResolution,
+                   self.linkCount);
     contactCount = storageCountContacts();
+    Serial0.printf("contactCount: %d\n", contactCount);
     for (int i = 0; i < contactCount; i++)
     {
-        storageLoadContactName(i, contactNames[i], USERNAME_LEN);
+        storageLoadContactName(i, contactNames[i], NAME_LEN);
         Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
     }
     displayInit();
@@ -155,94 +163,4 @@ void loop()
 
     displayRender(fsm_get_state(), self, currentContact, contactNames, contactCount,
                   fsm_get_contact_index(), fsm_get_menu_selection(), idleShowQR);
-}*/
-
-/*
-// main MAC address: 48:f6:ee:c7:15:0e
-#include <Arduino.h>
-
-#include <NimBLEDevice.h>
-
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-void setup()
-{
-    Serial0.begin(115200);
-    Serial0.println("code start...");
-    NimBLEDevice::init("con-venience");
-
-    NimBLEServer         *pServer = NimBLEDevice::createServer();
-    NimBLEService        *pService = pServer->createService(SERVICE_UUID);
-    NimBLECharacteristic *pCharacteristic =
-        pService->createCharacteristic(CHARACTERISTIC_UUID, NIMBLE_PROPERTY::READ);
-    pCharacteristic->setValue("hello from con-venience");
-    pService->start();
-
-    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setMinInterval(100);
-    pAdvertising->setMaxInterval(200);
-    pAdvertising->start(0);
-
-    Serial0.println("BLE advertising...");
-    Serial0.printf("MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
-}
-
-void loop()
-{
-}*/
-
-// client mac address:
-#include <Arduino.h>
-
-#include <NimBLEDevice.h>
-
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-static NimBLEAddress targetAddress("48:f6:ee:c7:15:0e", BLE_ADDR_PUBLIC);
-
-void setup()
-{
-    Serial0.begin(115200);
-    NimBLEDevice::init("con-venience-client");
-
-    Serial0.println("Scanning...");
-    NimBLEScan       *pScan = NimBLEDevice::getScan();
-    NimBLEScanResults results = pScan->getResults(5000);
-
-    for (int i = 0; i < results.getCount(); i++)
-    {
-        const NimBLEAdvertisedDevice *device = results.getDevice(i);
-        Serial0.printf("Found: %s\n", device->getAddress().toString().c_str());
-        if (device->getAddress() == targetAddress)
-        {
-            Serial0.println("Found target device!");
-
-            NimBLEClient *pClient = NimBLEDevice::createClient();
-            if (pClient->connect(device))
-            {
-                Serial0.println("Connected!");
-
-                NimBLERemoteService *pService = pClient->getService(SERVICE_UUID);
-                if (pService)
-                {
-                    NimBLERemoteCharacteristic *pChar =
-                        pService->getCharacteristic(CHARACTERISTIC_UUID);
-                    if (pChar && pChar->canRead())
-                    {
-                        std::string value = pChar->readValue();
-                        Serial0.printf("Value: %s\n", value.c_str());
-                    }
-                }
-                pClient->disconnect();
-            }
-            break;
-        }
-    }
-}
-
-void loop()
-{
 }

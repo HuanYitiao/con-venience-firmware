@@ -83,38 +83,6 @@ static void drawScrollingStr(int x, int y, int maxWidth, const char *str)
     u8g2.setMaxClipWindow();
 }
 
-static void drawAvatar(int drawX, int drawY, const uint8_t *avatar)
-{
-#if DISPLAY_WIDTH == 128
-    for (int y = 0; y < 32; y++)
-    {
-        for (int x = 0; x < 32; x++)
-        {
-            int     srcX = x * 2;
-            int     srcY = y * 2;
-            int     bitIndex = srcY * 64 + srcX;
-            uint8_t byte = avatar[bitIndex / 8];
-            uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
-            if (bit)
-                u8g2.drawPixel(drawX + x, drawY + y);
-        }
-    }
-#else
-    // 1:1，64x64
-    for (int y = 0; y < 64; y++)
-    {
-        for (int x = 0; x < 64; x++)
-        {
-            int     bitIndex = y * 64 + x;
-            uint8_t byte = avatar[bitIndex / 8];
-            uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
-            if (bit)
-                u8g2.drawPixel(drawX + x, drawY + y);
-        }
-    }
-#endif
-}
-
 void drawQR(const char *text)
 {
     QRCode  qrcode;
@@ -181,7 +149,6 @@ static void drawDitherRight(int x, int y, int w, int h)
 
 void displayInit()
 {
-    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CS);
     u8g2.begin();
 }
 
@@ -192,16 +159,16 @@ void drawHomepage(const Contact &self, bool showQR)
     drawDitherRight(DISPLAY_WIDTH - DITHER_WIDTH, 0, DITHER_WIDTH, DISPLAY_HEIGHT);
     if (showQR)
     {
-        drawQR("t.me/WolframLiu");
+        drawQR(self.links[0].url);
     }
     else
     {
-        int avatarX = (DISPLAY_WIDTH - 64) / 2;
-        for (int y = 0; y < 64; y++)
+        int avatarX = (DISPLAY_WIDTH - self.avatarResolution) / 2;
+        for (int y = 0; y < self.avatarResolution; y++)
         {
-            for (int x = 0; x < 64; x++)
+            for (int x = 0; x < self.avatarResolution; x++)
             {
-                int     bitIndex = y * 64 + x;
+                int     bitIndex = y * self.avatarResolution + x;
                 uint8_t byte = self.avatar[bitIndex / 8];
                 uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
                 if (bit)
@@ -227,11 +194,11 @@ void drawPairing(const Contact &self)
     int cx = DISPLAY_WIDTH / 2;
     int cy = DISPLAY_HEIGHT / 2;
 
-    for (int y = 0; y < 64; y++)
+    for (int y = 0; y < self.avatarResolution; y++)
     {
-        for (int x = 0; x < 64; x++)
+        for (int x = 0; x < self.avatarResolution; x++)
         {
-            int     bitIndex = y * 64 + x;
+            int     bitIndex = y * self.avatarResolution + x;
             uint8_t byte = self.avatar[bitIndex / 8];
             uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
             if (bit)
@@ -258,11 +225,11 @@ void drawContactCard(const Contact &contact)
     u8g2.clearBuffer();
 
     int avatarX = 0;
-    for (int y = 0; y < 64; y++)
+    for (int y = 0; y < contact.avatarResolution; y++)
     {
-        for (int x = 0; x < 64; x++)
+        for (int x = 0; x < contact.avatarResolution; x++)
         {
-            int     bitIndex = y * 64 + x;
+            int     bitIndex = y * contact.avatarResolution + x;
             uint8_t byte = contact.avatar[bitIndex / 8];
             uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
             if (bit)
@@ -271,10 +238,10 @@ void drawContactCard(const Contact &contact)
     }
 
     u8g2.setFont(u8g2_font_7x13B_tf);
-    drawScrollingStr(64, 14, 64, contact.username);
+    drawScrollingStr(contact.avatarResolution, 14, contact.avatarResolution, contact.name);
 
     u8g2.setFont(u8g2_font_6x10_tf);
-    drawScrollingStr(64, 28, 64, contact.url);
+    drawScrollingStr(contact.avatarResolution, 28, contact.avatarResolution, contact.links[0].url);
 
     u8g2.sendBuffer();
 }
@@ -306,7 +273,7 @@ void drawMenu(bool menuSelection)
 }
 
 // ── contact list ──────────────────────────────────────────
-void drawContactList(const char names[][USERNAME_LEN], int count, int index)
+void drawContactList(const char names[][NAME_LEN], int count, int index)
 {
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x10_tf);
@@ -329,7 +296,7 @@ void drawContactList(const char names[][USERNAME_LEN], int count, int index)
             u8g2.setDrawColor(0);
         }
 
-        char converted[USERNAME_LEN];
+        char converted[NAME_LEN];
         utf8ToLatin1(names[ci], converted, sizeof(converted));
 
         if (selected)
@@ -355,11 +322,11 @@ void drawMyProfile(const Contact &self)
     u8g2.clearBuffer();
 
     int avatarX = 0;
-    for (int y = 0; y < 64; y++)
+    for (int y = 0; y < self.avatarResolution; y++)
     {
-        for (int x = 0; x < 64; x++)
+        for (int x = 0; x < self.avatarResolution; x++)
         {
-            int     bitIndex = y * 64 + x;
+            int     bitIndex = y * self.avatarResolution + x;
             uint8_t byte = self.avatar[bitIndex / 8];
             uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
             if (bit)
@@ -367,12 +334,10 @@ void drawMyProfile(const Contact &self)
         }
     }
     u8g2.setFont(u8g2_font_7x13B_tf);
-    drawScrollingStr(64, 14, 64, self.username);
+    drawScrollingStr(self.avatarResolution, 14, self.avatarResolution, self.name);
 
-    char urlShort[18];
     u8g2.setFont(u8g2_font_6x10_tf);
-    strlcpy(urlShort, self.url, sizeof(urlShort));
-    drawScrollingStr(64, 28, 64, self.url);
+    drawScrollingStr(self.avatarResolution, 28, self.avatarResolution, self.links[0].url);
 
     u8g2.sendBuffer();
 }
@@ -398,7 +363,7 @@ void drawLowBattery()
 }
 
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
-                   const char contactNames[][USERNAME_LEN], int contactCount, int contactIndex,
+                   const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    bool menuSelection, bool idleShowQR)
 {
     switch (state)
