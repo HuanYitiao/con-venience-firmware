@@ -36,8 +36,9 @@ void setup()
     ledOff();
 
     Serial0.begin(115200);
-    fsm_init();
+    fsmInit();
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
+    delay(200);
     storageInit();
     storageLoadSelf(self);
     Serial0.printf("self: name=%s res=%d links=%d\n", self.name, self.avatarResolution,
@@ -58,7 +59,7 @@ void setup()
     pinMode(PIN_RIGHT, INPUT_PULLUP);
 
     Serial0.println("con-venience ready");
-    Serial0.printf("Initial state: %s\n", stateName(fsm_get_state()));
+    Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
 }
 
 void loop()
@@ -125,9 +126,9 @@ void loop()
 
     if (hasEvent)
     {
-        state_t before = fsm_get_state();
-        fsm_handle_event(event);
-        state_t after = fsm_get_state();
+        state_t before = fsmGetState();
+        fsmHandleEvent(event);
+        state_t after = fsmGetState();
 
         if (before != after)
         {
@@ -143,7 +144,7 @@ void loop()
         if (after == STATE_MENU)
         {
             Serial0.printf("[MENU]  selection: %s\n",
-                           fsm_get_menu_selection() ? "Friends" : "My Profile");
+                           fsmGetMenuSelection() ? "Friends" : "My Profile");
         }
 
         if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
@@ -153,7 +154,7 @@ void loop()
     }
 
     static int lastContactIndex = -1;
-    int        currentIndex = fsm_get_contact_index();
+    int        currentIndex = fsmGetContactIndex();
     if (contactCount > 0 && currentIndex != lastContactIndex)
     {
         bool ok = storageLoadContact(currentIndex, currentContact);
@@ -161,6 +162,8 @@ void loop()
         lastContactIndex = currentIndex;
     }
 
-    displayRender(fsm_get_state(), self, currentContact, contactNames, contactCount,
-                  fsm_get_contact_index(), fsm_get_menu_selection(), idleShowQR);
+    const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
+    displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
+                  fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
+                  fsmGetLinkIndex());
 }

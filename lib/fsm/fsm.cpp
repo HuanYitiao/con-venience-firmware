@@ -4,31 +4,45 @@
 
 static state_t       currentState = STATE_IDLE;
 static state_t       prePairingState = STATE_IDLE;
+static state_t       preProfileState = STATE_MENU;
 static int           contactIndex = 0;
 static unsigned long stateEnterTime = 0;
 static bool          menuOnFriends = true;
+static int           linkIndex = 0;
 
-void fsm_init()
+void fsmInit()
 {
     currentState = STATE_IDLE;
     prePairingState = STATE_IDLE;
+    preProfileState = STATE_MENU;
     contactIndex = 0;
     stateEnterTime = millis();
+    linkIndex = 0;
 }
 
-state_t fsm_get_state()
+state_t fsmGetState()
 {
     return currentState;
 }
 
-int fsm_get_contact_index()
+int fsmGetContactIndex()
 {
     return contactIndex;
 }
 
-bool fsm_get_menu_selection()
+bool fsmGetMenuSelection()
 {
     return menuOnFriends;
+}
+
+int fsmGetLinkIndex()
+{
+    return linkIndex;
+}
+
+bool fsmIsViewingSelf()
+{
+    return preProfileState == STATE_MENU;
 }
 
 const char *eventName(event_t e)
@@ -86,10 +100,12 @@ const char *stateName(state_t s)
             return "MENU";
         case STATE_CONTACT_LIST:
             return "CONTACT_LIST";
-        case STATE_CONTACT_DETAIL:
-            return "CONTACT_DETAIL";
-        case STATE_MY_PROFILE:
-            return "MY_PROFILE";
+        case STATE_PROFILE_AVATAR:
+            return "PROFILE_AVATAR";
+        case STATE_PROFILE_LINKS:
+            return "PROFILE_LINKS";
+        case STATE_PROFILE_QR:
+            return "PROFILE_QR";
         case STATE_STANDBY:
             return "STANDBY";
         case STATE_LOW_BATTERY:
@@ -99,7 +115,7 @@ const char *stateName(state_t s)
     }
 }
 
-void fsm_handle_event(event_t event)
+void fsmHandleEvent(event_t event)
 {
     switch (currentState)
     {
@@ -184,7 +200,9 @@ void fsm_handle_event(event_t event)
                     }
                     else
                     {
-                        currentState = STATE_MY_PROFILE;
+                        preProfileState = currentState;
+                        currentState = STATE_PROFILE_AVATAR;  // Switch between avatar/links/qr
+                                                              // handled by display
                     }
                     stateEnterTime = millis();
                     break;
@@ -215,7 +233,8 @@ void fsm_handle_event(event_t event)
                     contactIndex++;
                     break;
                 case EVENT_RIGHT_CLICK:
-                    currentState = STATE_CONTACT_DETAIL;
+                    preProfileState = currentState;
+                    currentState = STATE_PROFILE_AVATAR;
                     stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
@@ -230,11 +249,16 @@ void fsm_handle_event(event_t event)
             }
             break;
 
-        case STATE_CONTACT_DETAIL:
+        case STATE_PROFILE_AVATAR:
             switch (event)
             {
                 case EVENT_LEFT_CLICK:
-                    currentState = STATE_CONTACT_LIST;
+                    currentState = preProfileState;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_RIGHT_CLICK:
+                    currentState = STATE_PROFILE_LINKS;
+                    linkIndex = 0;
                     stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
@@ -249,11 +273,41 @@ void fsm_handle_event(event_t event)
             }
             break;
 
-        case STATE_MY_PROFILE:
+        case STATE_PROFILE_LINKS:
             switch (event)
             {
                 case EVENT_LEFT_CLICK:
-                    currentState = STATE_MENU;
+                    currentState = STATE_PROFILE_AVATAR;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_UP_CLICK:
+                    if (linkIndex > 0)
+                        linkIndex--;
+                    break;
+                case EVENT_DOWN_CLICK:
+                    linkIndex++;
+                    break;
+                case EVENT_RIGHT_CLICK:
+                    currentState = STATE_PROFILE_QR;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_OVERTIME_SHUTDOWN:
+                    currentState = STATE_STANDBY;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_PROFILE_QR:
+            switch (event)
+            {
+                case EVENT_LEFT_CLICK:
+                    currentState = STATE_PROFILE_LINKS;
                     stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:

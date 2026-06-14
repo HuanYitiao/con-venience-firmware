@@ -7,8 +7,9 @@ typedef enum
     STATE_CONTACT_CARD,
     STATE_MENU,
     STATE_CONTACT_LIST,
-    STATE_CONTACT_DETAIL,
-    STATE_MY_PROFILE,
+    STATE_PROFILE_AVATAR,
+    STATE_PROFILE_LINKS,
+    STATE_PROFILE_QR,
     STATE_STANDBY,
     STATE_LOW_BATTERY
 } state_t;
@@ -36,8 +37,10 @@ typedef enum
 const char *eventName(event_t e);
 const char *stateName(state_t s);
 
-void    fsm_init();
-void    fsm_handle_event(event_t event);
-state_t fsm_get_state();
-int     fsm_get_contact_index();
-bool    fsm_get_menu_selection();  // true = Friends, false = MyProfile
+void    fsmInit();
+void    fsmHandleEvent(event_t event);
+state_t fsmGetState();
+int     fsmGetContactIndex();
+bool    fsmGetMenuSelection();
+int     fsmGetLinkIndex();
+bool    fsmIsViewingSelf();

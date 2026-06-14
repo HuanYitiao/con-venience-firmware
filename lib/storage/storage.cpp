@@ -6,7 +6,7 @@
 
 bool storageInit(uint8_t csPin)
 {
-    if (!SD.begin(csPin))
+    if (!SD.begin(csPin, SPI, 4000000))
     {
         Serial0.println("SD init failed");
         return false;

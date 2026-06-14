@@ -316,30 +316,71 @@ void drawContactDetail(const Contact &contact)
     drawContactCard(contact);
 }
 
-// ── my profile ────────────────────────────────────────────
-void drawMyProfile(const Contact &self)
+// ── profile avatar ────────────────────────────────────────
+void drawProfileAvatar(const Contact &contact)
 {
     u8g2.clearBuffer();
 
-    int avatarX = 0;
-    for (int y = 0; y < self.avatarResolution; y++)
+    for (int y = 0; y < contact.avatarResolution; y++)
     {
-        for (int x = 0; x < self.avatarResolution; x++)
+        for (int x = 0; x < contact.avatarResolution; x++)
         {
-            int     bitIndex = y * self.avatarResolution + x;
-            uint8_t byte = self.avatar[bitIndex / 8];
+            int     bitIndex = y * contact.avatarResolution + x;
+            uint8_t byte = contact.avatar[bitIndex / 8];
             uint8_t bit = (byte >> (7 - (bitIndex % 8))) & 1;
             if (bit)
-                u8g2.drawPixel(avatarX + x, y);
+                u8g2.drawPixel(x, y);
         }
     }
+
     u8g2.setFont(u8g2_font_7x13B_tf);
-    drawScrollingStr(self.avatarResolution, 14, self.avatarResolution, self.name);
+    drawScrollingStr(contact.avatarResolution + 2, 14, DISPLAY_WIDTH - contact.avatarResolution - 2,
+                     contact.name);
 
     u8g2.setFont(u8g2_font_6x10_tf);
-    drawScrollingStr(self.avatarResolution, 28, self.avatarResolution, self.links[0].url);
+    drawScrollingStr(contact.avatarResolution + 2, 26, DISPLAY_WIDTH - contact.avatarResolution - 2,
+                     contact.species);
+
+    u8g2.setFont(u8g2_font_6x10_tf);
+    drawScrollingStr(contact.avatarResolution + 2, 38, DISPLAY_WIDTH - contact.avatarResolution - 2,
+                     contact.from);
 
     u8g2.sendBuffer();
+}
+
+void drawProfileLinks(const Contact &contact, int linkIndex)
+{
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x10_tf);
+
+    const int lineH = 12;
+
+    for (int i = 0; i < contact.linkCount; i++)
+    {
+        int  y = (i + 1) * lineH;
+        int  clampedIndex = min(linkIndex, (int)contact.linkCount - 1);
+        bool selected = (i == clampedIndex);
+
+        if (selected)
+        {
+            u8g2.drawBox(0, y - 10, DISPLAY_WIDTH, lineH);
+            u8g2.setDrawColor(0);
+        }
+
+        char converted[32];
+        utf8ToLatin1(contact.links[i].tag, converted, sizeof(converted));
+        u8g2.drawStr(4, y, converted);
+
+        u8g2.setDrawColor(1);
+    }
+
+    u8g2.sendBuffer();
+}
+
+void drawProfileQR(const Contact &contact, int linkIndex)
+{
+    u8g2.clearBuffer();
+    drawQR(contact.links[linkIndex].url);
 }
 
 // ── standby ───────────────────────────────────────────────
@@ -364,7 +405,8 @@ void drawLowBattery()
 
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
-                   bool menuSelection, bool idleShowQR)
+                   bool menuSelection, bool idleShowQR, const Contact &profileContact,
+                   int linkIndex)
 {
     switch (state)
     {
@@ -383,11 +425,14 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
         case STATE_CONTACT_LIST:
             drawContactList(contactNames, contactCount, contactIndex);
             break;
-        case STATE_CONTACT_DETAIL:
-            drawContactDetail(currentContact);
+        case STATE_PROFILE_AVATAR:
+            drawProfileAvatar(profileContact);
             break;
-        case STATE_MY_PROFILE:
-            drawMyProfile(self);
+        case STATE_PROFILE_LINKS:
+            drawProfileLinks(profileContact, linkIndex);
+            break;
+        case STATE_PROFILE_QR:
+            drawProfileQR(profileContact, linkIndex);
             break;
         case STATE_STANDBY:
             drawStandby();
