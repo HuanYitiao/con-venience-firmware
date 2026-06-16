@@ -1,5 +1,8 @@
 #include <Arduino.h>
 
+#include <NimBLEDevice.h>
+
+#include "ble.h"
 #include "button.h"
 #include "display.h"
 #include "fsm.h"
@@ -28,6 +31,28 @@ static char    contactNames[16][NAME_LEN] = {};
 static int     contactCount = 0;
 static bool    idleShowQR = false;
 
+#if 0
+#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}    // 自己的MAC
+#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}  // 对方的MAC
+#else
+#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}  // 自己的MAC
+#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}    // 对方的MAC
+#endif
+
+static bool bleResultReady = false;
+static bool bleResultSuccess = false;
+
+static void onBleComplete(bool success, const uint8_t *data, size_t len)
+{
+    bleResultSuccess = success;
+    bleResultReady = true;
+    Serial0.printf("BLE done: %s len=%d\n", success ? "OK" : "FAIL", len);
+    if (success && data != nullptr)
+    {
+        Serial0.printf("Data: %.*s\n", (int)len, (char *)data);
+    }
+}
+
 void setup()
 {
     ledInit();
@@ -36,6 +61,7 @@ void setup()
     ledOff();
 
     Serial0.begin(115200);
+    NimBLEDevice::init("con-venience");
     fsmInit();
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
     delay(200);
@@ -52,6 +78,8 @@ void setup()
     }
     displayInit();
 
+    Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
+
     pinMode(PIN_UP, INPUT_PULLUP);
     pinMode(PIN_DOWN, INPUT_PULLUP);
     pinMode(PIN_PAIR, INPUT_PULLUP);
@@ -60,10 +88,26 @@ void setup()
 
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
+
+    uint8_t myMac[] = MY_MAC;
+    uint8_t peerMac[] = PEER_MAC;
+    uint8_t selfMac[] = MY_MAC;
+
+    ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
+    Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
+
+    const char *testProfile = "test_profile_data";
+    bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
 }
 
 void loop()
 {
+    if (bleResultReady)
+    {
+        bleResultReady = false;
+        Serial0.printf("BLE result: %s\n", bleResultSuccess ? "success" : "fail");
+    }
+
     btn_event_t upEvent = btn_read(PIN_UP, &btnUp);
     btn_event_t downEvent = btn_read(PIN_DOWN, &btnDown);
     btn_event_t pairEvent = btn_read(PIN_PAIR, &btnPair);
