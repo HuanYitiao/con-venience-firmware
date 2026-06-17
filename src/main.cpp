@@ -6,12 +6,12 @@
 #include "button.h"
 // #include "display.h"
 #include "G.h"
-// #include "avatar.h"
 #include "display_st75256.h"
 #include "fsm.h"
 #include "led.h"
 #include "pins.h"
 #include "storage.h"
+#include "wolframe.h"
 
 static btn_state_t btnUp = {};
 static btn_state_t btnDown = {};
@@ -213,7 +213,7 @@ void setup()
 {
     initLCD();
     clean();
-    drawImage(G_data);
+    drawImage(wolframe_data);
 }
 
 void loop()
