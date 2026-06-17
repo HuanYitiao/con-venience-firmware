@@ -73,6 +73,6 @@ def convert(input_path: str, output_path: str) -> None:
 
 
 if __name__ == "__main__":
-    inp = sys.argv[1] if len(sys.argv) > 1 else "lib/display_st75256/avatar.bin"
-    out = sys.argv[2] if len(sys.argv) > 2 else "include/avatar.h"
+    inp = sys.argv[1] if len(sys.argv) > 1 else "lib/display_st75256/wolframe.bin"
+    out = sys.argv[2] if len(sys.argv) > 2 else "lib/display_st75256/wolframe.h"
     convert(inp, out)

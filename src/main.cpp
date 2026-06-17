@@ -5,7 +5,8 @@
 #include "ble.h"
 #include "button.h"
 // #include "display.h"
-#include "avatar.h"
+#include "G.h"
+// #include "avatar.h"
 #include "display_st75256.h"
 #include "fsm.h"
 #include "led.h"
@@ -212,7 +213,7 @@ void setup()
 {
     initLCD();
     clean();
-    drawImage(avatar_data);
+    drawImage(G_data);
 }
 
 void loop()
