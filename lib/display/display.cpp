@@ -1,7 +1,7 @@
 #include "display.h"
 
 #include "qrcode.h"
-// change
+// change branch
 
 #define PAIRING_FRAME_INTERVAL 200  // ms
 #define SCROLL_INTERVAL 100
