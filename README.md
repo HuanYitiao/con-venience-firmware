@@ -14,6 +14,12 @@ Designed for fursuiters — two wearers touch devices to exchange contact inform
 - 2.42" SSD1309 OLED (128×64)
 - MicroSD card storage
 
+## Status
+
+- ACOM physical contact → BLE MAC exchange
+- BLE bidirectional profile transfer
+- Production display upgrade (SSD1309 → ST75256)
+
 ## Build
 
 Requires PlatformIO. Open this repository as the workspace root in VS Code.
