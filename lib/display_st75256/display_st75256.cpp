@@ -163,55 +163,44 @@ void setWindow(uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye)
     sendCommand(0x5C);  // 写数据指令
 }
 
-// 测试 4 阶灰阶 (屏幕分为四个垂直条块)
-void testGrayScale()
+void draw(const uint8_t *data, int x, int y, int w, int h, uint8_t bgColor)
 {
-    setWindow(0, 255, 0, 31);
+    int startPage = y / 4;
+    int numPages = (h + 3) / 4;
+    int endPage = startPage + numPages - 1;
 
-    // 预先生成一行数据，然后批量写入（32 页 × 1 次 writeBytes）
-    static uint8_t rowBuf[256];
-    for (int col = 0; col < 256; col++)
+    setWindow((uint8_t)x, (uint8_t)(x + w - 1), (uint8_t)startPage, (uint8_t)endPage);
+
+    if (bgColor == 0x00)
     {
-        if (col < 64)
-            rowBuf[col] = 0x00;  // 灰度阶 1 (纯白/全亮)
-        else if (col < 128)
-            rowBuf[col] = 0x55;  // 灰度阶 2
-        else if (col < 192)
-            rowBuf[col] = 0xAA;  // 灰度阶 3
-        else
-            rowBuf[col] = 0xFF;  // 灰度阶 4 (纯黑/全灭)
+        // 无衬底/透明：直接整块发送，效率最高
+        sendDataBulk(data, (size_t)w * numPages);
     }
-    SPI.beginTransaction(LCD_SPI_SETTINGS);
-    digitalWrite(RS_PIN, HIGH);
-    digitalWrite(CS_PIN, LOW);
-    for (int page = 0; page < 32; page++)
+    else
     {
-        SPI.writeBytes(rowBuf, 256);
+        // 将每字节与 bgColor 进行 OR，使背景（0x00）区域呈现衬底颜色
+        static uint8_t rowBuf[256];
+        SPI.beginTransaction(LCD_SPI_SETTINGS);
+        digitalWrite(RS_PIN, HIGH);
+        digitalWrite(CS_PIN, LOW);
+        for (int p = 0; p < numPages; p++)
+        {
+            const uint8_t *src = data + p * w;
+            for (int c = 0; c < w; c++)
+            {
+                rowBuf[c] = src[c] | bgColor;
+            }
+            SPI.writeBytes(rowBuf, w);
+        }
+        digitalWrite(CS_PIN, HIGH);
+        SPI.endTransaction();
     }
-    digitalWrite(CS_PIN, HIGH);
-    SPI.endTransaction();
 }
 
 void clean()
 {
     setWindow(0, 255, 0, 31);       // 设置全屏窗口，并进入写数据模式（0x5C）
     sendDataFill(0x00, 256 * 128);  // 全白（灰度0）
-}
-
-void drawBlock()
-{
-    int col_begin = 0;
-    int col_end = 10;
-    int page_begin = 0;
-    int page_end = 30;
-    setWindow(col_begin, col_end, page_begin, page_end);
-    for (int page = page_begin; page < page_end + 1; page++)
-    {
-        for (int col = col_begin; col < col_end + 1; col++)
-        {
-            sendData(0xFF);
-        }
-    }
 }
 
 void drawTextWithGrayscale(const char *text, int x, int y, uint8_t fgGray = 0xFF,
@@ -263,71 +252,6 @@ void drawTextWithGrayscale(const char *text, int x, int y, uint8_t fgGray = 0xFF
 
     // 5. 写入ST75256（bgGray 作为衬底颜色，通过 OR 填充背景区域）
     draw(grayBuf, 0, 0, 256, 128, bgGray);
-}
-
-void draw(const uint8_t *data, int x, int y, int w, int h, uint8_t bgColor)
-{
-    int startPage = y / 4;
-    int numPages = (h + 3) / 4;
-    int endPage = startPage + numPages - 1;
-
-    setWindow((uint8_t)x, (uint8_t)(x + w - 1), (uint8_t)startPage, (uint8_t)endPage);
-
-    if (bgColor == 0x00)
-    {
-        // 无衬底/透明：直接整块发送，效率最高
-        sendDataBulk(data, (size_t)w * numPages);
-    }
-    else
-    {
-        // 将每字节与 bgColor 进行 OR，使背景（0x00）区域呈现衬底颜色
-        static uint8_t rowBuf[256];
-        SPI.beginTransaction(LCD_SPI_SETTINGS);
-        digitalWrite(RS_PIN, HIGH);
-        digitalWrite(CS_PIN, LOW);
-        for (int p = 0; p < numPages; p++)
-        {
-            const uint8_t *src = data + p * w;
-            for (int c = 0; c < w; c++)
-            {
-                rowBuf[c] = src[c] | bgColor;
-            }
-            SPI.writeBytes(rowBuf, w);
-        }
-        digitalWrite(CS_PIN, HIGH);
-        SPI.endTransaction();
-    }
-}
-
-void drawGrayChessboard(uint8_t bias)
-{
-    const uint8_t blockSize = 16;              // 每个方块边长(像素)
-    const uint8_t blockPages = blockSize / 4;  // 4灰阶下1页=4像素高
-    const uint8_t grayTable[4] = {
-        0x00,  // 白(最亮)
-        0x55,  // 浅灰
-        0xAA,  // 深灰
-        0xFF   // 黑(最暗)
-    };
-
-    setWindow(0, 255, 0, 31);
-
-    static uint8_t rowBuf[256];
-    SPI.beginTransaction(LCD_SPI_SETTINGS);
-    digitalWrite(RS_PIN, HIGH);
-    digitalWrite(CS_PIN, LOW);
-    for (int page = 0; page < 32; page++)
-    {
-        const uint8_t rowBlock = page / blockPages;
-        for (int col = 0; col < 256; col++)
-        {
-            const uint8_t colBlock = col / blockSize;
-            rowBuf[col] = grayTable[(colBlock + rowBlock + bias) % 4];
-        }
-        SPI.writeBytes(rowBuf, 256);
-    }
-    digitalWrite(CS_PIN, HIGH);
-    SPI.endTransaction();
 }
 
 // 将u8g2 2bit灰度值转换为ST75256的2bit格式
@@ -470,4 +394,79 @@ void drawTextWithGrayscale(const char *text, int x, int y, uint8_t fgGray, uint8
 
     // 5. 写入ST75256（bgGray 作为衬底颜色，通过 OR 填充背景区域）
     draw(grayBuf, 0, 0, 256, 128, bgGray);
+}
+
+void test_drawGrayChessboard(uint8_t bias)
+{
+    const uint8_t blockSize = 16;              // 每个方块边长(像素)
+    const uint8_t blockPages = blockSize / 4;  // 4灰阶下1页=4像素高
+    const uint8_t grayTable[4] = {
+        0x00,  // 白(最亮)
+        0x55,  // 浅灰
+        0xAA,  // 深灰
+        0xFF   // 黑(最暗)
+    };
+
+    setWindow(0, 255, 0, 31);
+
+    static uint8_t rowBuf[256];
+    SPI.beginTransaction(LCD_SPI_SETTINGS);
+    digitalWrite(RS_PIN, HIGH);
+    digitalWrite(CS_PIN, LOW);
+    for (int page = 0; page < 32; page++)
+    {
+        const uint8_t rowBlock = page / blockPages;
+        for (int col = 0; col < 256; col++)
+        {
+            const uint8_t colBlock = col / blockSize;
+            rowBuf[col] = grayTable[(colBlock + rowBlock + bias) % 4];
+        }
+        SPI.writeBytes(rowBuf, 256);
+    }
+    digitalWrite(CS_PIN, HIGH);
+    SPI.endTransaction();
+}
+
+void test_GrayScale()
+{
+    setWindow(0, 255, 0, 31);
+
+    // 预先生成一行数据，然后批量写入（32 页 × 1 次 writeBytes）
+    static uint8_t rowBuf[256];
+    for (int col = 0; col < 256; col++)
+    {
+        if (col < 64)
+            rowBuf[col] = 0x00;  // 灰度阶 1 (纯白/全亮)
+        else if (col < 128)
+            rowBuf[col] = 0x55;  // 灰度阶 2
+        else if (col < 192)
+            rowBuf[col] = 0xAA;  // 灰度阶 3
+        else
+            rowBuf[col] = 0xFF;  // 灰度阶 4 (纯黑/全灭)
+    }
+    SPI.beginTransaction(LCD_SPI_SETTINGS);
+    digitalWrite(RS_PIN, HIGH);
+    digitalWrite(CS_PIN, LOW);
+    for (int page = 0; page < 32; page++)
+    {
+        SPI.writeBytes(rowBuf, 256);
+    }
+    digitalWrite(CS_PIN, HIGH);
+    SPI.endTransaction();
+}
+
+void test_drawBlock()
+{
+    int col_begin = 0;
+    int col_end = 10;
+    int page_begin = 0;
+    int page_end = 40;
+    setWindow(col_begin, col_end, page_begin, page_end);
+    for (int page = page_begin; page < page_end + 1; page++)
+    {
+        for (int col = col_begin; col < col_end + 1; col++)
+        {
+            sendData(0xFF);
+        }
+    }
 }
