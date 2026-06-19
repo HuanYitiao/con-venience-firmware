@@ -2,6 +2,14 @@
 
 static const SPISettings LCD_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
 
+// u8g2实例（使用软件SPI，但不直接操作硬件 - 仅用于字体渲染）
+U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2(U8G2_R0,
+                                        /* clock=*/SCLK_PIN,
+                                        /* data=*/SID_PIN,
+                                        /* cs=*/CS_PIN,
+                                        /* dc=*/RS_PIN,
+                                        /* reset=*/RES_PIN);
+
 void sendCommand(uint8_t cmd)
 {
     digitalWrite(RS_PIN, LOW);  // RS拉低，表示指令
@@ -134,6 +142,14 @@ void initLCD()
     clean();
 }
 
+// 初始化u8g2（仅用于字体渲染buffer）
+void initU8g2()
+{
+    u8g2.begin();
+    u8g2.setFont(u8g2_font_ncenB14_tr);  // 设置默认字体
+    u8g2.setDrawColor(1);                // 1=前景色
+}
+
 // 设置写入窗口
 void setWindow(uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye)
 {
@@ -157,13 +173,13 @@ void testGrayScale()
     for (int col = 0; col < 256; col++)
     {
         if (col < 64)
-            rowBuf[col] = 0x00;  // 灰度阶 1 (纯黑/全灭)
+            rowBuf[col] = 0x00;  // 灰度阶 1 (纯白/全亮)
         else if (col < 128)
             rowBuf[col] = 0x55;  // 灰度阶 2
         else if (col < 192)
             rowBuf[col] = 0xAA;  // 灰度阶 3
         else
-            rowBuf[col] = 0xFF;  // 灰度阶 4 (纯白/全亮)
+            rowBuf[col] = 0xFF;  // 灰度阶 4 (纯黑/全灭)
     }
     SPI.beginTransaction(LCD_SPI_SETTINGS);
     digitalWrite(RS_PIN, HIGH);
@@ -179,7 +195,7 @@ void testGrayScale()
 void clean()
 {
     setWindow(0, 255, 0, 31);       // 设置全屏窗口，并进入写数据模式（0x5C）
-    sendDataFill(0x00, 256 * 128);  // 全黑（灰度0）
+    sendDataFill(0x00, 256 * 128);  // 全白（灰度0）
 }
 
 void drawBlock()
@@ -198,10 +214,89 @@ void drawBlock()
     }
 }
 
-void drawImage(const uint8_t *data)
+void drawTextWithGrayscale(const char *text, int x, int y, uint8_t fgGray = 0xFF,
+                           uint8_t bgGray = 0x55, uint8_t fontSize = 14,
+                           const uint8_t *font = u8g2_font_ncenB14_tr)
 {
-    setWindow(0, 255, 0, 31);
-    sendDataBulk(data, 256 * 32);
+    // 1. u8g2渲染到内部buffer
+    u8g2.clearBuffer();
+    u8g2.setFont(font);
+    u8g2.drawStr(x, y, text);
+
+    // 2. 获取u8g2的buffer
+    uint8_t *u8g2Buf = u8g2.getBufferPtr();
+    int      bufWidth = u8g2.getBufferTileWidth() * 8;  // tile宽度转像素
+    int      bufHeight = u8g2.getBufferTileHeight() * 8;
+
+    // 3. 转换为ST75256的灰度格式
+    static uint8_t grayBuf[256 * 32];        // ST75256: 256列 x 32页
+    memset(grayBuf, 0x00, sizeof(grayBuf));  // 背景填透明（0x00），由 draw 的 bgColor OR 填充
+
+    // 4. 逐像素转换（u8g2是按列存储的1bpp格式）
+    for (int page = 0; page < 32; page++)
+    {
+        for (int col = 0; col < 256; col++)
+        {
+            uint8_t grayPixels = 0x00;  // 4个2bit像素（ST75256每字节=4像素）
+
+            for (int subPixel = 0; subPixel < 4; subPixel++)
+            {
+                int y = page * 4 + subPixel;  // ST75256: 1页=4像素高
+                if (y < 128 && col < bufWidth)
+                {
+                    // 从u8g2 buffer读取1bit
+                    int u8g2Page = y / 8;
+                    int u8g2Bit = y % 8;
+                    int u8g2Idx = u8g2Page * bufWidth + col;
+
+                    if (u8g2Buf[u8g2Idx] & (1 << u8g2Bit))
+                    {
+                        // 如果u8g2该位是1(白色)，设置为前景色
+                        grayPixels &= ~(0x03 << (subPixel * 2));
+                        grayPixels |= (fgGray & 0x03) << (subPixel * 2);
+                    }
+                }
+            }
+            grayBuf[page * 256 + col] = grayPixels;
+        }
+    }
+
+    // 5. 写入ST75256（bgGray 作为衬底颜色，通过 OR 填充背景区域）
+    draw(grayBuf, 0, 0, 256, 128, bgGray);
+}
+
+void draw(const uint8_t *data, int x, int y, int w, int h, uint8_t bgColor)
+{
+    int startPage = y / 4;
+    int numPages = (h + 3) / 4;
+    int endPage = startPage + numPages - 1;
+
+    setWindow((uint8_t)x, (uint8_t)(x + w - 1), (uint8_t)startPage, (uint8_t)endPage);
+
+    if (bgColor == 0x00)
+    {
+        // 无衬底/透明：直接整块发送，效率最高
+        sendDataBulk(data, (size_t)w * numPages);
+    }
+    else
+    {
+        // 将每字节与 bgColor 进行 OR，使背景（0x00）区域呈现衬底颜色
+        static uint8_t rowBuf[256];
+        SPI.beginTransaction(LCD_SPI_SETTINGS);
+        digitalWrite(RS_PIN, HIGH);
+        digitalWrite(CS_PIN, LOW);
+        for (int p = 0; p < numPages; p++)
+        {
+            const uint8_t *src = data + p * w;
+            for (int c = 0; c < w; c++)
+            {
+                rowBuf[c] = src[c] | bgColor;
+            }
+            SPI.writeBytes(rowBuf, w);
+        }
+        digitalWrite(CS_PIN, HIGH);
+        SPI.endTransaction();
+    }
 }
 
 void drawGrayChessboard(uint8_t bias)
@@ -209,10 +304,10 @@ void drawGrayChessboard(uint8_t bias)
     const uint8_t blockSize = 16;              // 每个方块边长(像素)
     const uint8_t blockPages = blockSize / 4;  // 4灰阶下1页=4像素高
     const uint8_t grayTable[4] = {
-        0x00,  // 深灰(最暗)
+        0x00,  // 白(最亮)
         0x55,  // 浅灰
-        0xAA,  // 浅白
-        0xFF   // 白(最亮)
+        0xAA,  // 深灰
+        0xFF   // 黑(最暗)
     };
 
     setWindow(0, 255, 0, 31);
@@ -233,4 +328,146 @@ void drawGrayChessboard(uint8_t bias)
     }
     digitalWrite(CS_PIN, HIGH);
     SPI.endTransaction();
+}
+
+// 将u8g2 2bit灰度值转换为ST75256的2bit格式
+static inline uint8_t mapGray2bit(uint8_t u8g2Gray)
+{
+    // u8g2灰度: 0=黑, 1=深灰, 2=浅灰, 3=白
+    // ST75256: 0xFF=黑, 0xAA=深灰, 0x55=浅灰, 0x00=白
+    const uint8_t grayMap[4] = {0xFF, 0xAA, 0x55, 0x00};
+    return grayMap[u8g2Gray & 0x03];
+}
+
+// 局部刷新：只在指定矩形区域内渲染文字
+void drawTextInRect(const char *text, int textX, int textY, int rectX, int rectY, int rectW,
+                    int rectH, uint8_t fgGray, uint8_t bgGray)
+{
+    // 1. 使用u8g2裁剪窗口渲染文字
+    u8g2.clearBuffer();
+    u8g2.setClipWindow(rectX, rectY, rectX + rectW - 1, rectY + rectH - 1);
+    u8g2.setDrawColor(1);  // 前景色
+    u8g2.drawStr(textX, textY, text);
+    u8g2.setMaxClipWindow();  // 恢复全屏
+
+    // 2. 获取u8g2的buffer
+    uint8_t *u8g2Buf = u8g2.getBufferPtr();
+    int      bufWidth = u8g2.getBufferTileWidth() * 8;  // tile宽度转像素
+
+    // 3. 计算ST75256的页范围（4像素/页）
+    int startPage = rectY / 4;
+    int endPage = (rectY + rectH - 1) / 4;
+    int startCol = rectX;
+    int endCol = rectX + rectW - 1;
+
+    // 边界检查
+    if (startPage < 0)
+        startPage = 0;
+    if (endPage > 31)
+        endPage = 31;
+    if (startCol < 0)
+        startCol = 0;
+    if (endCol > 255)
+        endCol = 255;
+
+    // 4. 设置ST75256写入窗口
+    setWindow(startCol, endCol, startPage, endPage);
+
+    // 5. 逐页转换并发送
+    static uint8_t pageBuf[256];
+    for (int page = startPage; page <= endPage; page++)
+    {
+        for (int col = startCol; col <= endCol; col++)
+        {
+            uint8_t grayByte = 0x00;  // ST75256: 1字节=4个2bit像素
+
+            // 处理这一页的4个像素
+            for (int subPixel = 0; subPixel < 4; subPixel++)
+            {
+                int     pixelY = page * 4 + subPixel;
+                uint8_t pixelGray = bgGray;  // 默认背景色
+
+                // 检查是否在矩形范围内
+                if (pixelY >= rectY && pixelY < rectY + rectH && col >= rectX
+                    && col < rectX + rectW)
+                {
+                    // 从u8g2 buffer读取1bit
+                    if (col < bufWidth && pixelY < 128)
+                    {
+                        int u8g2Page = pixelY / 8;
+                        int u8g2Bit = pixelY % 8;
+                        int u8g2Idx = u8g2Page * bufWidth + col;
+
+                        if (u8g2Buf[u8g2Idx] & (1 << u8g2Bit))
+                        {
+                            pixelGray = fgGray;  // u8g2显示1，使用前景色
+                        }
+                    }
+                }
+                else
+                {
+                    // 超出矩形范围，保持原内容（这里简化为背景色）
+                    // 如果需要保留原内容，需要先读取屏幕数据
+                    pixelGray = bgGray;
+                }
+
+                // 将2bit灰度值放入字节
+                grayByte |= (pixelGray & 0x03) << (subPixel * 2);
+            }
+
+            pageBuf[col - startCol] = grayByte;
+        }
+        sendDataBulk(pageBuf, endCol - startCol + 1);
+    }
+}
+
+// 全屏渲染文字（带灰度背景）
+void drawTextWithGrayscale(const char *text, int x, int y, uint8_t fgGray, uint8_t bgGray)
+{
+    // 1. u8g2渲染到内部buffer
+    u8g2.clearBuffer();
+    u8g2.setDrawColor(1);
+    u8g2.drawStr(x, y, text);
+
+    // 2. 获取u8g2的buffer
+    uint8_t *u8g2Buf = u8g2.getBufferPtr();
+    int      bufWidth = u8g2.getBufferTileWidth() * 8;
+
+    // 3. 转换为ST75256的灰度格式
+    static uint8_t grayBuf[256 * 32];
+    memset(grayBuf, 0x00, sizeof(grayBuf));  // 背景填透明（0x00）
+
+    // 4. 逐像素转换
+    for (int page = 0; page < 32; page++)
+    {
+        for (int col = 0; col < 256; col++)
+        {
+            uint8_t grayByte = 0x00;
+
+            for (int subPixel = 0; subPixel < 4; subPixel++)
+            {
+                int     pixelY = page * 4 + subPixel;
+                uint8_t pixelGray = 0x00;  // 默认透明
+
+                if (pixelY < 128 && col < bufWidth)
+                {
+                    int u8g2Page = pixelY / 8;
+                    int u8g2Bit = pixelY % 8;
+                    int u8g2Idx = u8g2Page * bufWidth + col;
+
+                    if (u8g2Buf[u8g2Idx] & (1 << u8g2Bit))
+                    {
+                        pixelGray = fgGray;
+                    }
+                }
+
+                grayByte |= (pixelGray & 0x03) << (subPixel * 2);
+            }
+
+            grayBuf[page * 256 + col] = grayByte;
+        }
+    }
+
+    // 5. 写入ST75256（bgGray 作为衬底颜色，通过 OR 填充背景区域）
+    draw(grayBuf, 0, 0, 256, 128, bgGray);
 }
