@@ -7,6 +7,7 @@
 #include "display.h"
 #include "fsm.h"
 #include "led.h"
+#include "packing.h"
 #include "storage.h"
 
 #define PIN_UP 2
@@ -32,11 +33,13 @@ static int     contactCount = 0;
 static bool    idleShowQR = false;
 
 #if 0
-#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}    // 自己的MAC
-#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}  // 对方的MAC
+// big
+#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}
+#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}
 #else
-#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}  // 自己的MAC
-#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}    // 对方的MAC
+// small
+#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}
+#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}
 #endif
 
 static bool bleResultReady = false;
@@ -49,7 +52,8 @@ static void onBleComplete(bool success, const uint8_t *data, size_t len)
     Serial0.printf("BLE done: %s len=%d\n", success ? "OK" : "FAIL", len);
     if (success && data != nullptr)
     {
-        Serial0.printf("Data: %.*s\n", (int)len, (char *)data);
+        bool ok = packingUnpack(data, len);
+        Serial0.printf("unpack: %s\n", ok ? "OK" : "FAIL");
     }
 }
 
@@ -62,6 +66,7 @@ void setup()
 
     Serial0.begin(115200);
     NimBLEDevice::init("con-venience");
+    NimBLEDevice::setMTU(512);
     fsmInit();
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
     delay(200);
@@ -96,8 +101,10 @@ void setup()
     ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
     Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
 
-    const char *testProfile = "test_profile_data";
-    bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
+    static uint8_t packBuf[PACKING_BUF_MAX];
+    size_t         packLen = packingPack(packBuf, sizeof(packBuf));
+    Serial0.printf("pack: %d bytes\n", packLen);
+    bleStart(peerMac, role, packBuf, packLen, onBleComplete);
 }
 
 void loop()
