@@ -1,3 +1,9 @@
+/**
+ * @file display_st75256.h
+ * @brief ST75256 Display Driver Header File
+ * @details Supports 256x128 resolution with 4-level grayscale display
+ */
+
 #pragma once
 
 #include <Arduino.h>
@@ -5,41 +11,80 @@
 #include <SPI.h>
 #include <U8g2lib.h>
 
-#define SCLK_PIN 10  // 串行时钟 (对应屏幕 D0)
-#define SID_PIN 11   // 串行数据 (对应屏幕 D1~D3 短接)
-#define CS_PIN 7     // 片选引脚 (对应屏幕 CS)
-#define RS_PIN 6     // 寄存器/数据选择引脚 (对应屏幕 A0/RS)
-#define RES_PIN 9    // 屏幕复位引脚 (对应屏幕 RES)
-#define black 0xFF
-#define white 0x00
-#define lightGray 0x55
-#define darkGray 0xAA
+/**
+ * @defgroup DISPLAY_PINS Display Hardware Interface Pins
+ * @{
+ */
+#define SCLK_PIN 10  ///< Serial Clock (Screen D0)
+#define SID_PIN 11   ///< Serial Data (Screen D1~D3 connected)
+#define CS_PIN 7     ///< Chip Select (Screen CS)
+#define RS_PIN 6     ///< Register/Data Select (Screen A0/RS)
+#define RES_PIN 9    ///< Screen Reset Pin (Screen RES)
+/** @} */
 
+/**
+ * @defgroup DISPLAY_GRAY_LEVELS Grayscale Level Definitions (4-level)
+ * @{
+ */
+#define DISPLAY_BLACK 0xFF       ///< Full black (0b11111111)
+#define DISPLAY_WHITE 0x00       ///< Full white (0b00000000)
+#define DISPLAY_LIGHT_GRAY 0x55  ///< Light gray (0b01010101)
+#define DISPLAY_DARK_GRAY 0xAA   ///< Dark gray (0b10101010)
+
+/**
+ * @defgroup DISPLAY_EXTERN External Global Object Declarations
+ * @{
+ */
+extern U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2;            ///< U8g2 display object
+extern const uint8_t                     *font_variant[];  ///< Font variant array
+/** @} */
+
+/**
+ * @defgroup DISPLAY_FUNCTIONS Display Interface Functions
+ * @{
+ */
+
+/// @brief Initialize U8g2 library
+void initU8g2();
+
+/// @brief Initialize display hardware interface
 void initLCD();
+
+/// @brief Test grayscale display effects
 void testGrayScale();
+
+/// @brief Clear display content
 void clean();
+
+/// @brief Draw test block
 void drawBlock();
+
+/// @brief Draw grayscale chessboard pattern
+/// @param bias Offset parameter to generate different chessboard patterns
 void drawGrayChessboard(uint8_t bias = 0);
-// 局部刷新原语：将 data 绘制到以 (x, y) 为左上角、w×h 像素的区域。
-// data 布局：page 主序，w * ((h+3)/4) 字节，每字节编码 4 个垂直像素（2bpp）。
-// y 应为 4 的倍数（页对齐）以获得正确定位。
-// bgColor：衬底颜色，通过 OR 运算填充背景（0x00 = 透明直传，0xFF = 黑色衬底，默认）。
-// 当且仅当字体渲染时将字形 buffer（背景=0x00）与 bgColor 进行 OR，背景即呈现衬底颜色；
-// 对原始图像数据请传入 bgColor=0x00 以保留原始像素值。
-void draw(const uint8_t *data, int x, int y, int w, int h, uint8_t bgColor = 0xFF);
 
-// u8g2灰度渲染功能
-extern U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2;
-void                                      initU8g2();
+/// @brief Draw bitmap data to specified position
+/// @param canvas Bitmap data buffer
+/// @param x Starting X coordinate
+/// @param y Starting Y coordinate
+/// @param w Width in pixels
+/// @param h Height in pixels
+/// @param bg Background color (grayscale value)
+void draw(const uint8_t *canvas, int x, int y, int w, int h, uint8_t bg = DISPLAY_WHITE);
 
-// 局部刷新：只在指定矩形区域内渲染文字
-// rectX, rectY: 矩形左上角坐标(像素)
-// rectW, rectH: 矩形宽高(像素)
-// fgGray: 文字灰度 (0x00=白, 0x55=浅灰, 0xAA=深灰, 0xFF=黑)
-// bgGray: 背景灰度
-void drawTextInRect(const char *text, int textX, int textY, int rectX, int rectY, int rectW,
-                    int rectH, uint8_t fgGray = 0xFF, uint8_t bgGray = white);
+/// @brief Draw text to specified rectangle area
+/// @param text Text content
+/// @param textX Text relative X coordinate
+/// @param textY Text relative Y coordinate
+/// @param rectX Rectangle area starting X coordinate
+/// @param rectY Rectangle area starting Y coordinate
+/// @param rectW Rectangle area width
+/// @param rectH Rectangle area height
+/// @param fgGray Text foreground grayscale value
+/// @param bgGray Text background grayscale value
+/// @param font Font pointer
+void drawText(const char *text, int textX, int textY, int rectX, int rectY, int rectW, int rectH,
+              uint8_t fgGray = DISPLAY_BLACK, uint8_t bgGray = DISPLAY_LIGHT_GRAY,
+              const uint8_t *font = font_variant[0]);
 
-// 全屏渲染文字（带灰度背景）
-void drawTextWithGrayscale(const char *text, int x, int y, uint8_t fgGray = black,
-                           uint8_t bgGray = white);
+/** @} */

@@ -213,7 +213,7 @@ void setup()
 {
     initLCD();
     clean();
-    draw(wolframe_data, 0, 0, 256, 128, 0x00);
+    draw(wolframe_data, 0, 0, 256, 128, DISPLAY_WHITE);
 }
 
 void loop()
