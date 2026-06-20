@@ -77,18 +77,17 @@ void drawGrayChessboard(uint8_t bias = 0);
 /// @param y Starting Y coordinate
 /// @param w Width in pixels
 /// @param h Height in pixels
-/// @param mode Drawing mode: DRAW_NORMAL (as-is), DRAW_BG (white→light-gray), DRAW_INVERT
-/// (negative)
+/// @param mode Drawing mode: NOR (as-is), BG (white→light-gray), INV (negative)
 void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode = NOR);
 
 /// @brief Draw single-line text within a fixed canvas area
 /// @param text Text content (single line)
-/// @param canvasX Canvas absolute X position on screen
-/// @param canvasY Canvas absolute Y position on screen
+/// @param canvasX Canvas absolute X position on screen, 0 corresponds to the left
+/// @param canvasY Canvas absolute Y position on screen, 0 corresponds to the top
 /// @param canvasW Canvas width in pixels
 /// @param canvasH Canvas height in pixels
 /// @param font Font pointer
-/// @param mode Drawing mode: DRAW_NORMAL, DRAW_BG, DRAW_INVERT (background handled by draw())
+/// @param mode Drawing mode: NOR, BG, INV (background handled by draw())
 /// @param textX Text X offset within canvas (default 5)
 /// @param textY Text Y offset within canvas (default 3)
 void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
