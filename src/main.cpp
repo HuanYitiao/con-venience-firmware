@@ -11,6 +11,7 @@
 #include "led.h"
 #include "pins.h"
 #include "storage.h"
+#include "testblock.h"
 #include "wolframe.h"
 
 static btn_state_t btnUp = {};
@@ -33,19 +34,19 @@ static bool    idleShowQR = false;
 #define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}    // 对方的MAC
 #endif
 
-static bool bleResultReady = false;
-static bool bleResultSuccess = false;
+// static bool bleResultReady = false;
+// static bool bleResultSuccess = false;
 
-static void onBleComplete(bool success, const uint8_t *data, size_t len)
-{
-    bleResultSuccess = success;
-    bleResultReady = true;
-    Serial0.printf("BLE done: %s len=%d\n", success ? "OK" : "FAIL", len);
-    if (success && data != nullptr)
-    {
-        Serial0.printf("Data: %.*s\n", (int)len, (char *)data);
-    }
-}
+// static void onBleComplete(bool success, const uint8_t *data, size_t len)
+// {
+//     bleResultSuccess = success;
+//     bleResultReady = true;
+//     Serial0.printf("BLE done: %s len=%d\n", success ? "OK" : "FAIL", len);
+//     if (success && data != nullptr)
+//     {
+//         Serial0.printf("Data: %.*s\n", (int)len, (char *)data);
+//     }
+// }
 
 // void setup()
 // {
@@ -207,18 +208,16 @@ static void onBleComplete(bool success, const uint8_t *data, size_t len)
 //                   fsmGetLinkIndex());
 // }
 
-uint8_t bias = 0;
-
 void setup()
 {
     initLCD();
     clean();
-    draw(wolframe_data, 0, 0, 256, 128, DISPLAY_WHITE);
+    draw(wolframe_data, 0, 0, 128, 128);
+    drawText("Fursuit", 144, 32, 112, 16, font_variant[1]);
+    drawText("but no longer", 144, 56, 112, 16, font_variant[1], INV);
+    drawText("Friday", 144, 80, 112, 16, font_variant[1], INV);
 }
 
 void loop()
 {
-    // drawGrayChessboard(bias);
-    // delay(500);
-    // bias = (bias + 1) % 4;
 }

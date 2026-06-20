@@ -26,10 +26,18 @@
  * @defgroup DISPLAY_GRAY_LEVELS Grayscale Level Definitions (4-level)
  * @{
  */
-#define DISPLAY_BLACK 0xFF       ///< Full black (0b11111111)
-#define DISPLAY_WHITE 0x00       ///< Full white (0b00000000)
-#define DISPLAY_LIGHT_GRAY 0x55  ///< Light gray (0b01010101)
-#define DISPLAY_DARK_GRAY 0xAA   ///< Dark gray (0b10101010)
+#define DISPLAY_BLACK 0b11       ///< Full black
+#define DISPLAY_WHITE 0b00       ///< Full white
+#define DISPLAY_LIGHT_GRAY 0b01  ///< Light gray
+#define DISPLAY_DARK_GRAY 0b10   ///< Dark gray
+
+/// @brief Drawing mode for the draw() function
+enum DrawMode
+{
+    NOR,  ///< Normal display (as-is)
+    BG,   ///< Substrate: replace white pixels with light gray
+    INV   ///< Invert: bitwise negative image
+};
 
 /**
  * @defgroup DISPLAY_EXTERN External Global Object Declarations
@@ -64,27 +72,26 @@ void drawBlock();
 void drawGrayChessboard(uint8_t bias = 0);
 
 /// @brief Draw bitmap data to specified position
-/// @param canvas Bitmap data buffer
+/// @param canvas Bitmap data buffer (page-major, column-minor, 2bpp packed)
 /// @param x Starting X coordinate
 /// @param y Starting Y coordinate
 /// @param w Width in pixels
 /// @param h Height in pixels
-/// @param bg Background color (grayscale value)
-void draw(const uint8_t *canvas, int x, int y, int w, int h, uint8_t bg = DISPLAY_WHITE);
+/// @param mode Drawing mode: DRAW_NORMAL (as-is), DRAW_BG (white→light-gray), DRAW_INVERT
+/// (negative)
+void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode = NOR);
 
-/// @brief Draw text to specified rectangle area
-/// @param text Text content
-/// @param textX Text relative X coordinate
-/// @param textY Text relative Y coordinate
-/// @param rectX Rectangle area starting X coordinate
-/// @param rectY Rectangle area starting Y coordinate
-/// @param rectW Rectangle area width
-/// @param rectH Rectangle area height
-/// @param fgGray Text foreground grayscale value
-/// @param bgGray Text background grayscale value
+/// @brief Draw single-line text within a fixed canvas area
+/// @param text Text content (single line)
+/// @param canvasX Canvas absolute X position on screen
+/// @param canvasY Canvas absolute Y position on screen
+/// @param canvasW Canvas width in pixels
+/// @param canvasH Canvas height in pixels
 /// @param font Font pointer
-void drawText(const char *text, int textX, int textY, int rectX, int rectY, int rectW, int rectH,
-              uint8_t fgGray = DISPLAY_BLACK, uint8_t bgGray = DISPLAY_LIGHT_GRAY,
-              const uint8_t *font = font_variant[0]);
+/// @param mode Drawing mode: DRAW_NORMAL, DRAW_BG, DRAW_INVERT (background handled by draw())
+void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
+              const uint8_t *font, DrawMode mode = NOR);
 
 /** @} */
+void     test_GrayScale();
+uint8_t *gen_GrayScale();

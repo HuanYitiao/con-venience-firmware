@@ -37,7 +37,7 @@ void sendData(uint8_t data)
 
 void initLCD()
 {
-    // 初始化硬件 SPI（MISO 不需要，传 -1；CS 手动控制，传 -1）
+    initU8g2();
     SPI.begin(SCLK_PIN, -1, SID_PIN, -1);
 
     // 其余控制引脚设为输出
@@ -66,14 +66,14 @@ void initLCD()
     sendData(0x02);  // Bias=1/12
 
     sendCommand(0x20);  // 灰度级设置
+    sendData(0x01);
     sendData(0x03);
     sendData(0x05);
     sendData(0x07);
     sendData(0x09);
     sendData(0x0b);
     sendData(0x0d);
-    sendData(0x10);
-    sendData(0x11);
+    sendData(0x0f);
     sendData(0x11);
     sendData(0x13);
     sendData(0x15);
@@ -135,7 +135,7 @@ void setWindow(uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye)
     sendCommand(0x5C);  // 写数据指令
 }
 
-void draw(const uint8_t *canvas, int x, int y, int w, int h, uint8_t bg)
+void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode)
 {
     int startPage = y / 4;
     int endPage = (y + h - 1) / 4;
@@ -148,7 +148,29 @@ void draw(const uint8_t *canvas, int x, int y, int w, int h, uint8_t bg)
         const uint8_t *cur_col = canvas + p * w;
         for (int c = 0; c < w; c++)
         {
-            sendData(cur_col[c] | bg);
+            uint8_t byteVal = cur_col[c];
+            switch (mode)
+            {
+                case INV:
+                    sendData(~byteVal);
+                    break;
+                case BG:
+                {
+                    uint8_t result = 0;
+                    for (int sp = 0; sp < 4; sp++)
+                    {
+                        uint8_t sub = (byteVal >> (sp * 2)) & 0x03;
+                        if (sub == DISPLAY_WHITE)
+                            sub = DISPLAY_LIGHT_GRAY;
+                        result |= (sub << (sp * 2));
+                    }
+                    sendData(result);
+                    break;
+                }
+                case NOR:  // DRAW_NORMAL
+                    sendData(byteVal);
+                    break;
+            }
         }
     }
 }
@@ -156,29 +178,29 @@ void draw(const uint8_t *canvas, int x, int y, int w, int h, uint8_t bg)
 void clean()
 {
     uint8_t *canvas = new uint8_t[256 * 32];
-    draw(canvas, 0, 0, 256, 128, DISPLAY_WHITE);
+    memset(canvas, 0x00, 256 * 32);
+    draw(canvas, 0, 0, 256, 128, NOR);
     delete[] canvas;
 }
 
-void drawText(const char *text, int textX, int textY, int rectX, int rectY, int rectW, int rectH,
-              uint8_t fgGray, uint8_t bgGray, const uint8_t *font)
+void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
+              const uint8_t *font, DrawMode mode)
 {
-    // 1. 裁剪窗口渲染
+    uint8_t textX = 5;
+    uint8_t textY = 3;
     u8g2.clearBuffer();
-    u8g2.setClipWindow(rectX, rectY, rectX + rectW - 1, rectY + rectH - 1);
+    u8g2.setClipWindow(canvasX, canvasY, canvasX + canvasW - 1, canvasY + canvasH - 1);
     u8g2.setFont(font);
-    u8g2.drawStr(textX, textY, text);
+    u8g2.drawStr(canvasX + textX, canvasY + textY + u8g2.getAscent(), text);
     u8g2.setMaxClipWindow();
 
-    // 2. 获取u8g2 buffer
     uint8_t *u8g2Buf = u8g2.getBufferPtr();
     int      bufWidth = u8g2.getBufferTileWidth() * 8;
 
-    // 3. 计算ST75256页/列范围，并裁剪到屏幕边界
-    int startPage = rectY / 4;
-    int endPage = (rectY + rectH - 1) / 4;
-    int startCol = rectX;
-    int endCol = rectX + rectW - 1;
+    int startPage = canvasY / 4;
+    int endPage = (canvasY + canvasH - 1) / 4;
+    int startCol = canvasX;
+    int endCol = canvasX + canvasW - 1;
 
     if (startPage < 0)
         startPage = 0;
@@ -192,7 +214,6 @@ void drawText(const char *text, int textX, int textY, int rectX, int rectY, int 
     int numPages = endPage - startPage + 1;
     int numCols = endCol - startCol + 1;
 
-    // 4. 动态分配仅覆盖rect的画布；零初始化 = 全透明背景
     uint8_t *canvas = new uint8_t[numCols * numPages]();
 
     for (int page = startPage; page <= endPage; page++)
@@ -205,15 +226,14 @@ void drawText(const char *text, int textX, int textY, int rectX, int rectY, int 
             {
                 int pixelY = page * 4 + subPixel;
 
-                // 仅处理rect高度范围内的像素（页边界可能超出）
-                if (pixelY >= rectY && pixelY < rectY + rectH)
+                if (pixelY >= canvasY && pixelY < canvasY + canvasH)
                 {
                     int u8g2Page = pixelY / 8;
                     int u8g2Bit = pixelY % 8;
                     int u8g2Idx = u8g2Page * bufWidth + col;
 
                     if (u8g2Buf[u8g2Idx] & (1 << u8g2Bit))
-                        grayByte |= (fgGray & 0x03) << (subPixel * 2);
+                        grayByte |= DISPLAY_BLACK << ((3 - subPixel) * 2);
                 }
             }
 
@@ -221,8 +241,7 @@ void drawText(const char *text, int textX, int textY, int rectX, int rectY, int 
         }
     }
 
-    // 5. draw() 通过 bgGray OR 填充背景区域
-    draw(canvas, startCol, startPage * 4, numCols, numPages * 4, bgGray);
+    draw(canvas, startCol, startPage * 4, numCols, numPages * 4, mode);
     delete[] canvas;
 }
 
@@ -243,7 +262,7 @@ void test_GrayScale()
         for (int page = 0; page < 32; page++)
             buf[page * 256 + col] = val;
     }
-    draw(buf, 0, 0, 256, 128, DISPLAY_WHITE);
+    draw(buf, 0, 0, 256, 128, NOR);
 }
 
 void test_drawBlock()
@@ -256,5 +275,35 @@ void test_drawBlock()
     int            numPages = page_end - page_begin + 1;
     static uint8_t buf[11 * 41];
     memset(buf, 0xFF, sizeof(buf));
-    draw(buf, col_begin, page_begin * 4, w, numPages * 4, DISPLAY_WHITE);
+    draw(buf, col_begin, page_begin * 4, w, numPages * 4, NOR);
+}
+
+uint8_t *gen_GrayScale()
+{
+    static uint8_t buf[128 * 32];  // 128列 × 32页 = 4096 bytes
+    for (int page = 0; page < 32; page++)
+    {
+        uint8_t val;
+        if (page < 8)
+            val = 0x00;
+        else if (page < 16)
+            val = 0x55;
+        else if (page < 24)
+            val = 0xAA;
+        else
+            val = 0xFF;
+
+        for (int col = 0; col < 128; col++)
+        {
+            if (col < 64)
+            {
+                buf[page * 128 + col] = 0x00;
+            }
+            else
+            {
+                buf[page * 128 + col] = val;
+            }
+        }
+    }
+    return buf;
 }
