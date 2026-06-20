@@ -11,9 +11,10 @@ U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2(U8G2_R0,
                                         /* reset=*/RES_PIN);
 
 const uint8_t *font_variant[] = {
-    u8g2_font_6x10_tf,
     u8g2_font_7x13B_tf,
+    u8g2_font_8x13B_tf,
     u8g2_font_tenfatguys_tf,
+    u8g2_font_pressstart2p_8f,
 };
 
 void sendCommand(uint8_t cmd)
@@ -121,7 +122,8 @@ void initLCD()
 void initU8g2()
 {
     u8g2.begin();
-    u8g2.setDrawColor(1);  // 1=前景色
+    u8g2.enableUTF8Print();
+    u8g2.setDrawColor(1);
 }
 
 void setWindow(uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye)
@@ -190,7 +192,7 @@ void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canva
     u8g2.clearBuffer();
     u8g2.setClipWindow(canvasX, canvasY, canvasX + canvasW - 1, canvasY + canvasH - 1);
     u8g2.setFont(font);
-    u8g2.drawStr(canvasX + textX, canvasY + textY + u8g2.getAscent(), text);
+    u8g2.drawUTF8(canvasX + textX, canvasY + textY + u8g2.getAscent(), text);
     u8g2.setMaxClipWindow();
 
     uint8_t *u8g2Buf = u8g2.getBufferPtr();
