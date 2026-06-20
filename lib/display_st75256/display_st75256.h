@@ -89,8 +89,10 @@ void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode = NOR
 /// @param canvasH Canvas height in pixels
 /// @param font Font pointer
 /// @param mode Drawing mode: DRAW_NORMAL, DRAW_BG, DRAW_INVERT (background handled by draw())
+/// @param textX Text X offset within canvas (default 5)
+/// @param textY Text Y offset within canvas (default 3)
 void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
-              const uint8_t *font, DrawMode mode = NOR);
+              const uint8_t *font, DrawMode mode = NOR, uint8_t textX = 5, uint8_t textY = 3);
 
 /** @} */
 void     test_GrayScale();

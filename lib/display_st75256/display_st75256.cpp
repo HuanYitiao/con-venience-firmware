@@ -13,6 +13,7 @@ U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2(U8G2_R0,
 const uint8_t *font_variant[] = {
     u8g2_font_6x10_tf,
     u8g2_font_7x13B_tf,
+    u8g2_font_tenfatguys_tf,
 };
 
 void sendCommand(uint8_t cmd)
@@ -151,6 +152,9 @@ void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode)
             uint8_t byteVal = cur_col[c];
             switch (mode)
             {
+                case NOR:  // DRAW_NORMAL
+                    sendData(byteVal);
+                    break;
                 case INV:
                     sendData(~byteVal);
                     break;
@@ -167,9 +171,6 @@ void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode)
                     sendData(result);
                     break;
                 }
-                case NOR:  // DRAW_NORMAL
-                    sendData(byteVal);
-                    break;
             }
         }
     }
@@ -184,10 +185,8 @@ void clean()
 }
 
 void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
-              const uint8_t *font, DrawMode mode)
+              const uint8_t *font, DrawMode mode, uint8_t textX, uint8_t textY)
 {
-    uint8_t textX = 5;
-    uint8_t textY = 3;
     u8g2.clearBuffer();
     u8g2.setClipWindow(canvasX, canvasY, canvasX + canvasW - 1, canvasY + canvasH - 1);
     u8g2.setFont(font);
