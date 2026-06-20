@@ -80,19 +80,38 @@ void drawGrayChessboard(uint8_t bias = 0);
 /// @param mode Drawing mode: NOR (as-is), BG (white→light-gray), INV (negative)
 void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode = NOR);
 
-/// @brief Draw single-line text within a fixed canvas area
+/// @brief Per-instance state for scrolling text (one per line)
+struct ScrollTextState
+{
+    int           offset = 0;
+    unsigned long lastTime = 0;
+    bool          paused = true;
+    unsigned long pauseStart = 0;
+    char          lastText[128] = "";
+    uint8_t       lastMaxChars = 0;
+};
+
+/// @brief Initialize a ScrollTextState (call once per line before first use)
+void scrollTextInit(ScrollTextState &s);
+
+/// @brief Draw single-line text within a fixed canvas area, with optional scroll
 /// @param text Text content (single line)
 /// @param canvasX Canvas absolute X position on screen, 0 corresponds to the left
 /// @param canvasY Canvas absolute Y position on screen, 0 corresponds to the top
 /// @param canvasW Canvas width in pixels
 /// @param canvasH Canvas height in pixels
 /// @param font Font pointer
-/// @param mode Drawing mode: NOR, BG, INV (background handled by draw())
+/// @param mode Drawing mode: NOR, BG, INV
 /// @param textX Text X offset within canvas (default 5)
 /// @param textY Text Y offset within canvas (default 3)
+/// @param maxChars Max chars before scrolling (0=never scroll, default 0)
+/// @param scrollState Per-line state for multi-line independent scroll (nullptr=use internal
+/// singleton)
 void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
-              const uint8_t *font, DrawMode mode = NOR, uint8_t textX = 5, uint8_t textY = 3);
+              const uint8_t *font, DrawMode mode = NOR, uint8_t textX = 5, uint8_t textY = 3,
+              uint8_t maxChars = 0, ScrollTextState *scrollState = nullptr);
 
 /** @} */
+
 void     test_GrayScale();
 uint8_t *gen_GrayScale();

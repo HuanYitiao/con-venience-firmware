@@ -186,13 +186,94 @@ void clean()
     delete[] canvas;
 }
 
-void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
-              const uint8_t *font, DrawMode mode, uint8_t textX, uint8_t textY)
+// ── Scrolling text ────────────────────────────────────────
+#define SCROLL_TEXT_INTERVAL 40  ///< ms per scroll pixel step
+#define SCROLL_TEXT_PAUSE 500    ///< ms pause before/after scrolling
+
+void scrollTextInit(ScrollTextState &s)
 {
+    s.offset = 0;
+    s.paused = true;
+    s.pauseStart = millis();
+    s.lastText[0] = '\0';
+    s.lastMaxChars = 0;
+}
+
+void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canvasH,
+              const uint8_t *font, DrawMode mode, uint8_t textX, uint8_t textY, uint8_t maxChars,
+              ScrollTextState *scrollState)
+{
+    if (!text)
+        return;
+
+    size_t textLen = strlen(text);
+
+    // ── Determine scroll state ─────────────────────────
+    bool doScroll = (maxChars > 0 && textLen > maxChars);
+
+    static ScrollTextState s_internal;  // fallback for single-line scroll
+    ScrollTextState       &s = scrollState ? *scrollState : s_internal;
+
+    int renderX = canvasX + textX;
+
+    if (doScroll)
+    {
+        // Detect text or maxChars change → reset scroll
+        if (strcmp(s.lastText, text) != 0 || s.lastMaxChars != maxChars)
+        {
+            strncpy(s.lastText, text, sizeof(s.lastText) - 1);
+            s.lastText[sizeof(s.lastText) - 1] = '\0';
+            s.lastMaxChars = maxChars;
+            s.offset = 0;
+            s.paused = true;
+            s.pauseStart = millis();
+        }
+
+        u8g2.setFont(font);
+        int textWidth = u8g2.getUTF8Width(text);
+        int availWidth = canvasW - textX;
+
+        if (textWidth > availWidth)
+        {
+            unsigned long now = millis();
+
+            if (s.paused)
+            {
+                if (now - s.pauseStart >= SCROLL_TEXT_PAUSE)
+                {
+                    s.paused = false;
+                    s.offset = 0;
+                    s.lastTime = now;
+                }
+            }
+            else
+            {
+                if (now - s.lastTime >= SCROLL_TEXT_INTERVAL)
+                {
+                    s.offset++;
+                    s.lastTime = now;
+                    if (s.offset >= textWidth - availWidth)
+                    {
+                        s.paused = true;
+                        s.pauseStart = now;
+                    }
+                }
+            }
+            renderX -= s.offset;
+        }
+    }
+    else
+    {
+        // No scroll needed → reset state if one was provided
+        if (scrollState)
+            scrollTextInit(s);
+    }
+
+    // ── Render via u8g2 ────────────────────────────────
     u8g2.clearBuffer();
     u8g2.setClipWindow(canvasX, canvasY, canvasX + canvasW - 1, canvasY + canvasH - 1);
     u8g2.setFont(font);
-    u8g2.drawUTF8(canvasX + textX, canvasY + textY + u8g2.getAscent(), text);
+    u8g2.drawUTF8(renderX, canvasY + textY + u8g2.getAscent(), text);
     u8g2.setMaxClipWindow();
 
     uint8_t *u8g2Buf = u8g2.getBufferPtr();
