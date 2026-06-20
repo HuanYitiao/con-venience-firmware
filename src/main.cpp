@@ -2,6 +2,7 @@
 
 #include <NimBLEDevice.h>
 
+#include "acom.h"
 #include "ble.h"
 #include "button.h"
 #include "display.h"
@@ -89,23 +90,31 @@ void setup()
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
 
+    acom_init();
+
     uint8_t myMac[] = MY_MAC;
     uint8_t peerMac[] = PEER_MAC;
     uint8_t selfMac[] = MY_MAC;
 
-    ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
-    Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
+    // ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
+    // Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
 
-    const char *testProfile = "test_profile_data";
-    bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
+    // const char *testProfile = "test_profile_data";
+    // bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
 }
 
 void loop()
 {
-    if (bleResultReady)
+    // if (bleResultReady)
+    //{
+    //     bleResultReady = false;
+    //     Serial0.printf("BLE result: %s\n", bleResultSuccess ? "success" : "fail");
+    // }
+
+    state_t currentState = fsmGetState();
+    if (currentState == STATE_PAIRING)
     {
-        bleResultReady = false;
-        Serial0.printf("BLE result: %s\n", bleResultSuccess ? "success" : "fail");
+        acom_tick();
     }
 
     btn_event_t upEvent = btn_read(PIN_UP, &btnUp);
@@ -194,6 +203,11 @@ void loop()
         if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
         {
             idleShowQR = !idleShowQR;
+        }
+
+        if (after == STATE_PAIRING)
+        {
+            acom_start();
         }
     }
 
