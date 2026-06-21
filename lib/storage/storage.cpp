@@ -6,12 +6,14 @@
 
 bool storageInit(uint8_t csPin)
 {
-    if (!SD.begin(csPin, SPI, 4000000))
+    for (int i = 0; i < 3; i++)
     {
-        Serial0.println("SD init failed");
-        return false;
+        if (SD.begin(csPin, SPI, 4000000))
+            return true;
+        delay(500);
     }
-    return true;
+    Serial0.println("SD init failed");
+    return false;
 }
 
 bool storageLoadSelf(Contact &contact)
