@@ -31,6 +31,14 @@
 #define DISPLAY_LIGHT_GRAY 0b01  ///< Light gray
 #define DISPLAY_DARK_GRAY 0b10   ///< Dark gray
 
+/**
+ * @defgroup DISPLAY_SCROLLING_TEXT Scrolling Text Configuration
+ * @details Parameters for controlling scrolling text behavior
+ * @{
+ */
+#define SCROLL_TEXT_INTERVAL 40  ///< ms per scroll pixel step
+#define SCROLL_TEXT_PAUSE 500    ///< ms pause before/after scrolling
+
 /// @brief Drawing mode for the draw() function
 enum DrawMode
 {

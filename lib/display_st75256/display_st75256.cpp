@@ -186,10 +186,6 @@ void clean()
     delete[] canvas;
 }
 
-// ── Scrolling text ────────────────────────────────────────
-#define SCROLL_TEXT_INTERVAL 40  ///< ms per scroll pixel step
-#define SCROLL_TEXT_PAUSE 500    ///< ms pause before/after scrolling
-
 void scrollTextInit(ScrollTextState &s)
 {
     s.offset = 0;
@@ -203,8 +199,10 @@ void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canva
               const uint8_t *font, DrawMode mode, uint8_t textX, uint8_t textY, uint8_t maxChars,
               ScrollTextState *scrollState)
 {
-    if (!text)
-        return;
+    if (!scrollState)
+    {
+        text = "ERROR STATE";
+    };
 
     size_t textLen = strlen(text);
 
