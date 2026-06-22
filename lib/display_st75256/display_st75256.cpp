@@ -1,5 +1,8 @@
 #include "display_st75256.h"
 
+#include "G.h"
+#include "wolframe.h"
+
 static const SPISettings LCD_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
 
 // u8g2实例（使用软件SPI，但不直接操作硬件 - 仅用于字体渲染）
@@ -386,4 +389,50 @@ uint8_t *gen_GrayScale()
         }
     }
     return buf;
+}
+
+void demo(ScrollTextState *scrollState)
+{
+    if (!scrollState)
+    {
+        drawText("INPUT A SCROLL STATE", 50, 50, 128, 32, font_variant[1], NOR, 5, 5, 10);
+        return;
+    }
+    clean();
+    drawText("Demo", 100, 50, 128, 32, font_variant[1], NOR, 5, 5, 10, scrollState);
+    delay(2000);
+    clean();
+    drawText("4 Scale Gray", 100, 50, 128, 32, font_variant[1], NOR, 5, 5, 10, scrollState);
+    delay(2000);
+    clean();
+    test_GrayScale();
+    delay(2000);
+    clean();
+    drawText("Text with background", 100, 50, 128, 32, font_variant[1], BG, 5, 5, 10, scrollState);
+    delay(2000);
+    clean();
+    drawText("Inverted text", 100, 50, 128, 32, font_variant[1], INV, 5, 5, 10, scrollState);
+    delay(2000);
+    clean();
+
+    drawText("Profile demo", 100, 50, 128, 32, font_variant[1], NOR, 5, 5, 10, scrollState);
+    delay(2000);
+    clean();
+    draw(wolframe_data, 0, 0, 128, 128);
+    drawText("Wolframe", 128, 0, 128, 20, font_variant[1], INV, 5, 5);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], BG);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0]);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0]);
+    delay(2000);
+    clean();
+    draw(G_data, 0, 0, 128, 128);
+    drawText("Günther", 128, 0, 128, 20, font_variant[1], INV, 5, 5);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], BG);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0]);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0]);
+    delay(2000);
+    clean();
+    drawText("End of demo", 50, 50, 128, 32, font_variant[1], NOR, 5, 5, 10, scrollState);
+    delay(5000);
+    clean();
 }

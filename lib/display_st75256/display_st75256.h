@@ -123,3 +123,5 @@ void drawText(const char *text, int canvasX, int canvasY, int canvasW, int canva
 
 void     test_GrayScale();
 uint8_t *gen_GrayScale();
+
+void demo(ScrollTextState *scrollState);
