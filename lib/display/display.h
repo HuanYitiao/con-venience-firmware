@@ -5,13 +5,11 @@
 #include <U8g2lib.h>
 
 #include "fsm.h"
+#include "pins.h"
 #include "storage.h"
 
 #define DISPLAY_WIDTH 128
 #define DISPLAY_HEIGHT 64
-
-#define PIN_CS 18
-#define PIN_DC 23
 
 void displayInit();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
