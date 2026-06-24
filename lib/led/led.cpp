@@ -2,10 +2,10 @@
 
 #include <Adafruit_NeoPixel.h>
 
-#define LED_PIN 8
+#define PIN_LED 8
 #define NUM_LEDS 1
 
-Adafruit_NeoPixel rgbLed(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel rgbLed(NUM_LEDS, PIN_LED, NEO_GRB + NEO_KHZ800);
 
 void ledInit()
 {

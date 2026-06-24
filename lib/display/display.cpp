@@ -8,8 +8,8 @@
 #define SCROLL_PAUSE 1000
 
 static U8G2_SSD1309_128X64_NONAME0_F_4W_HW_SPI u8g2(U8G2_R2,
-                                                    /* cs  */ PIN_CS,
-                                                    /* dc  */ PIN_DC,
+                                                    /* cs  */ PIN_DISPLAY_CS,
+                                                    /* dc  */ PIN_DISPLAY_DC,
                                                     /* rst */ U8X8_PIN_NONE);
 
 static uint8_t       pairingFrame = 0;

@@ -7,17 +7,8 @@
 #include "display.h"
 #include "fsm.h"
 #include "led.h"
+#include "pins.h"
 #include "storage.h"
-
-#define PIN_UP 2
-#define PIN_DOWN 3
-#define PIN_PAIR 21
-#define PIN_LEFT 19
-#define PIN_RIGHT 20
-
-#define PIN_SCK 10
-#define PIN_MISO 15
-#define PIN_MOSI 11
 
 static btn_state_t btnUp = {};
 static btn_state_t btnDown = {};
@@ -63,7 +54,7 @@ void setup()
     Serial0.begin(115200);
     NimBLEDevice::init("con-venience");
     fsmInit();
-    SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
+    SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(200);
     storageInit();
     storageLoadSelf(self);

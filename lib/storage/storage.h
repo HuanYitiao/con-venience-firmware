@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
+#include "pins.h"
+
 /*
 self_profile.json example:
 {
@@ -20,8 +22,6 @@ self_profile.json example:
 #define SELF_JSON "/self_profile/profile.json"
 #define SELF_BIN "/self_profile/avatar.bin"
 #define FRIENDS_DIR "/friends_profiles"
-
-#define PIN_SD_CS 22
 
 #define PATH_LEN 96
 
