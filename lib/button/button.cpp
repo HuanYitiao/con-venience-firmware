@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 
-btn_event_t btn_read(int buttonPin, btn_state_t *state)
+btn_event_t btn_read(bool pressed, btn_state_t *state)
 {
-    bool current = !digitalRead(buttonPin);
+    bool current = pressed;
 
     if (current != state->pressed)
     {
@@ -16,14 +16,14 @@ btn_event_t btn_read(int buttonPin, btn_state_t *state)
     }
 
     state->pressed = current;
-    if (!state->prevPressed && state->pressed)  // just pressed
+    if (!state->prevPressed && state->pressed)
     {
         state->prevPressed = true;
         state->pressTime = millis();
         return BTN_NONE;
     }
 
-    if (state->prevPressed && !state->pressed)  // just release
+    if (state->prevPressed && !state->pressed)
     {
         state->prevPressed = false;
         state->releaseTime = millis();

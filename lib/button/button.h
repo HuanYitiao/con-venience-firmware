@@ -20,4 +20,4 @@ typedef enum
     BTN_LONG_PRESS
 } btn_event_t;
 
-btn_event_t btn_read(int buttonPin, btn_state_t *state);
+btn_event_t btn_read(bool pressed, btn_state_t *state);
