@@ -49,8 +49,10 @@ struct ScrollTextState
 
 void displayInit();
 void displayTestAvatar(const Contact &self);
+void displayTestText();
+void displayTestFriendGrayScale();
+void displayTestMinimalInit();
 void displayTestAllWhite();
-void displayTestAllBlack();
 void displayTestGrayChessboard();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,

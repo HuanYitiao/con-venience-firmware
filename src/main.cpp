@@ -64,7 +64,6 @@ void setup()
         Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
     }
     displayInit();
-    displayTestAllWhite();
 
     Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
 
