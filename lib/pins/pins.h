@@ -8,7 +8,7 @@
 // ── Display ───────────────────────
 #define PIN_DISPLAY_CS 19
 #define PIN_DISPLAY_DC 4
-#define PIN_DISPLAY_RST 15
+#define PIN_DISPLAY_RST 5
 
 // ── MicroSD ──────────────────────────────────────────────
 #define PIN_SD_CS 20
