@@ -12,31 +12,6 @@
 #include "pins.h"
 #include "storage.h"
 
-static void mcpWriteReg(uint8_t reg, uint8_t val)
-{
-    Wire.beginTransmission(MCP23008_ADDR);
-    Wire.write(reg);
-    Wire.write(val);
-    Wire.endTransmission();
-}
-
-static uint8_t mcpReadGPIO()
-{
-    Wire.beginTransmission(MCP23008_ADDR);
-    Wire.write(0x09);
-    Wire.endTransmission(false);
-    Wire.requestFrom((uint8_t)MCP23008_ADDR, (uint8_t)1);
-    return Wire.available() ? Wire.read() : 0xFF;
-}
-
-volatile bool mcpIntFlag = false;
-
-static btn_state_t btnUp = {};
-static btn_state_t btnDown = {};
-static btn_state_t btnPair = {};
-static btn_state_t btnLeft = {};
-static btn_state_t btnRight = {};
-
 static Contact self = {};
 static Contact currentContact = {};
 static char    contactNames[16][NAME_LEN] = {};
@@ -93,27 +68,7 @@ void setup()
     Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
 
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-
-    Serial0.println("I2C scan:");
-    for (uint8_t addr = 1; addr < 127; addr++)
-    {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0)
-        {
-            Serial0.printf("  found: 0x%02X\n", addr);
-        }
-    }
-
-    mcpWriteReg(0x00, 0x1F);
-    mcpWriteReg(0x06, 0xFF);
-    mcpWriteReg(0x02, 0x1F);
-    mcpWriteReg(0x03, 0x1F);
-    mcpWriteReg(0x04, 0x00);
-    mcpWriteReg(0x05, 0x04);
-    mcpReadGPIO();
-
-    pinMode(PIN_MCP_INT, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(PIN_MCP_INT), [] { mcpIntFlag = true; }, FALLING);
+    btn_init();
 
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
@@ -130,116 +85,88 @@ void setup()
 
 void loop()
 {
-    static bool lastFlag = false;
-    if (mcpIntFlag != lastFlag)
+    btn_events_t btnEvents = btn_poll();
+
+    event_t event;
+    bool    hasEvent = false;
+
+    if (btnEvents.up == BTN_CLICK)
     {
-        lastFlag = mcpIntFlag;
-        Serial0.printf("mcpIntFlag = %d\n", mcpIntFlag);
+        event = EVENT_UP_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.up == BTN_LONG_PRESS)
+    {
+        event = EVENT_UP_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.down == BTN_CLICK)
+    {
+        event = EVENT_DOWN_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.down == BTN_LONG_PRESS)
+    {
+        event = EVENT_DOWN_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.pair == BTN_CLICK)
+    {
+        event = EVENT_PAIRING_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.pair == BTN_LONG_PRESS)
+    {
+        event = EVENT_PAIRING_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.left == BTN_CLICK)
+    {
+        event = EVENT_LEFT_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.left == BTN_LONG_PRESS)
+    {
+        event = EVENT_LEFT_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.right == BTN_CLICK)
+    {
+        event = EVENT_RIGHT_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.right == BTN_LONG_PRESS)
+    {
+        event = EVENT_RIGHT_LONG_PRESS;
+        hasEvent = true;
     }
 
-    if (bleResultReady)
+    if (hasEvent)
     {
-        bleResultReady = false;
-        Serial0.printf("BLE result: %s\n", bleResultSuccess ? "success" : "fail");
-    }
+        state_t before = fsmGetState();
+        fsmHandleEvent(event);
+        state_t after = fsmGetState();
 
-    if (mcpIntFlag)
-    {
-        mcpIntFlag = false;
-        uint8_t captured = mcpReadGPIO();
-
-        btn_event_t upEvent = btn_read((captured >> MCP_PIN_BTN_UP) & 1 ? false : true, &btnUp);
-        btn_event_t downEvent =
-            btn_read((captured >> MCP_PIN_BTN_DOWN) & 1 ? false : true, &btnDown);
-        btn_event_t pairEvent =
-            btn_read((captured >> MCP_PIN_BTN_PAIR) & 1 ? false : true, &btnPair);
-        btn_event_t leftEvent =
-            btn_read((captured >> MCP_PIN_BTN_LEFT) & 1 ? false : true, &btnLeft);
-        btn_event_t rightEvent =
-            btn_read((captured >> MCP_PIN_BTN_RIGHT) & 1 ? false : true, &btnRight);
-
-        event_t event;
-        bool    hasEvent = false;
-
-        if (upEvent == BTN_CLICK)
+        if (before != after)
         {
-            event = EVENT_UP_CLICK;
-            hasEvent = true;
+            // displayResetScroll();
+            Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
+                           stateName(after));
         }
-        else if (upEvent == BTN_LONG_PRESS)
+        else
         {
-            event = EVENT_UP_LONG_PRESS;
-            hasEvent = true;
-        }
-        else if (downEvent == BTN_CLICK)
-        {
-            event = EVENT_DOWN_CLICK;
-            hasEvent = true;
-        }
-        else if (downEvent == BTN_LONG_PRESS)
-        {
-            event = EVENT_DOWN_LONG_PRESS;
-            hasEvent = true;
-        }
-        else if (pairEvent == BTN_CLICK)
-        {
-            event = EVENT_PAIRING_CLICK;
-            hasEvent = true;
-        }
-        else if (pairEvent == BTN_LONG_PRESS)
-        {
-            event = EVENT_PAIRING_LONG_PRESS;
-            hasEvent = true;
-        }
-        else if (leftEvent == BTN_CLICK)
-        {
-            event = EVENT_LEFT_CLICK;
-            hasEvent = true;
-        }
-        else if (leftEvent == BTN_LONG_PRESS)
-        {
-            event = EVENT_LEFT_LONG_PRESS;
-            hasEvent = true;
-        }
-        else if (rightEvent == BTN_CLICK)
-        {
-            event = EVENT_RIGHT_CLICK;
-            hasEvent = true;
-        }
-        else if (rightEvent == BTN_LONG_PRESS)
-        {
-            event = EVENT_RIGHT_LONG_PRESS;
-            hasEvent = true;
+            Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
         }
 
-        if (hasEvent)
+        if (after == STATE_MENU)
         {
-            state_t before = fsmGetState();
-            fsmHandleEvent(event);
-            state_t after = fsmGetState();
+            Serial0.printf("[MENU]  selection: %s\n",
+                           fsmGetMenuSelection() ? "Friends" : "My Profile");
+        }
 
-            if (before != after)
-            {
-                // displayResetScroll();
-                Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
-                               stateName(after));
-            }
-            else
-            {
-                Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event),
-                               stateName(before));
-            }
-
-            if (after == STATE_MENU)
-            {
-                Serial0.printf("[MENU]  selection: %s\n",
-                               fsmGetMenuSelection() ? "Friends" : "My Profile");
-            }
-
-            if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
-            {
-                idleShowQR = !idleShowQR;
-            }
+        if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
+        {
+            idleShowQR = !idleShowQR;
         }
     }
 
