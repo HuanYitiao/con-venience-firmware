@@ -222,7 +222,7 @@ static void drawTextUI(const char *text, int regionX, int regionY, int regionW, 
                 {
                     int u8g2Page = pixelY / 8;
                     int u8g2Bit = pixelY % 8;
-                    int u8g2Idx = u8g2Page * bufWidth + (col - DISPLAY_UI_X);
+                    int u8g2Idx = u8g2Page * bufWidth + col;
                     if (u8g2Buf[u8g2Idx] & (1 << u8g2Bit))
                         grayByte |= DISPLAY_BLACK << ((3 - subPixel) * 2);
                 }
@@ -329,6 +329,11 @@ static void drawQR(const char *text)
 // ── public API ─────────────────────────────────────────────
 void displayInit()
 {
+    // 注意：不调用 u8g2.begin()。已验证调用 u8g2.begin() 会导致屏幕显示异常
+    // (推测其内部会通过软件SPI真正发送一次针对此型号的初始化序列，与我们手写的
+    // 寄存器序列冲突，覆盖掉正确状态)。u8g2.setDrawColor() 是纯内存操作，不依赖 begin()。
+    u8g2.setDrawColor(1);
+
     pinMode(PIN_DISPLAY_RST, OUTPUT);
     pinMode(PIN_DISPLAY_CS, OUTPUT);
     pinMode(PIN_DISPLAY_DC, OUTPUT);
@@ -403,10 +408,6 @@ void displayInit()
 
     cleanAvatar();
     cleanUI();
-
-    u8g2.begin();
-    u8g2.enableUTF8Print();
-    u8g2.setDrawColor(1);
 }
 
 // 临时验证函数：直接用真实 Contact 数据测试头像渲染路径是否正确
@@ -417,6 +418,72 @@ void displayTestAvatar(const Contact &self)
     drawAvatarBitmap(self, 0);
     delay(3000);
     Serial0.println("Display test: avatar render done");
+}
+
+// 临时验证函数：测试不调用 u8g2.begin() 的情况下，文字渲染路径(drawTextUI)是否正常
+// drawTextUI 依赖 u8g2.clearBuffer()/setFont()/drawUTF8()/getBufferPtr() 这些纯内存操作，
+// 理论上不需要 begin() 真正发送过初始化序列到屏幕才能工作，因为它们只读写 U8g2 内部 RAM buffer
+void displayTestText()
+{
+    Serial0.println("Display test: rendering text without u8g2.begin()");
+    cleanUI();
+    drawTextUI("Hello UI", DISPLAY_UI_X, 20, DISPLAY_UI_WIDTH, 16, u8g2_font_7x13B_tf, 4, 0, 0,
+               nullptr);
+    delay(3000);
+    Serial0.println("Display test: text render done");
+}
+
+// 临时验证函数：原样移植自朋友代码的 test_GrayScale()
+// 256列 × 32页, 按列分4个色阶竖条: 0-63=纯白 64-127=浅灰 128-191=深灰 192-255=纯黑
+// 用于关键对照实验：朋友的数据生成方式在我们的驱动下是否能正确显示
+void displayTestFriendGrayScale()
+{
+    Serial0.println("Display test: friend's test_GrayScale (ported as-is)");
+    static uint8_t buf[256 * 32];
+    for (int col = 0; col < 256; col++)
+    {
+        uint8_t val;
+        if (col < 64)
+            val = 0x00;
+        else if (col < 128)
+            val = 0x55;
+        else if (col < 192)
+            val = 0xAA;
+        else
+            val = 0xFF;
+        for (int page = 0; page < 32; page++)
+            buf[page * 256 + col] = val;
+    }
+    draw(buf, 0, 0, 256, 128, NOR);
+    Serial0.println("Display test: friend's test_GrayScale done");
+}
+
+// 临时验证函数：最简初始化测试
+// 跳过灰度表/窗口地址/对比度/扫描方向等所有设置
+// 只做：硬件复位 -> 进入扩展指令1 -> 退出睡眠 -> 开显示
+// 不调用 displayInit()，独立完成自己的复位和最少命令
+// 用于判断屏幕是否能脱离"全黑"状态，不依赖任何后续精细配置
+void displayTestMinimalInit()
+{
+    Serial0.println("Display test: minimal init sequence");
+
+    pinMode(PIN_DISPLAY_RST, OUTPUT);
+    pinMode(PIN_DISPLAY_CS, OUTPUT);
+    pinMode(PIN_DISPLAY_DC, OUTPUT);
+
+    digitalWrite(PIN_DISPLAY_CS, HIGH);
+
+    digitalWrite(PIN_DISPLAY_RST, LOW);
+    delay(100);
+    digitalWrite(PIN_DISPLAY_RST, HIGH);
+    delay(100);
+
+    sendCommand(0x30);  // 扩展指令 1
+    sendCommand(0x94);  // 退出睡眠模式
+    delay(100);
+    sendCommand(0xAF);  // 开显示
+
+    Serial0.println("Display test: minimal init done, observe screen now");
 }
 
 // 临时验证函数：整屏填充 0x00 (理论上应为全白)
@@ -430,16 +497,6 @@ void displayTestAllWhite()
     draw(canvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
     delay(3000);
     Serial0.println("Display test: white fill done");
-}
-
-void displayTestAllBlack()
-{
-    Serial0.println("Display test: filling black (0x11)");
-    static uint8_t canvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
-    memset(canvas, 0x11, sizeof(canvas));
-    draw(canvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
-    delay(3000);
-    Serial0.println("Display test: black fill done");
 }
 
 // 临时验证函数：4级灰度棋盘测试
