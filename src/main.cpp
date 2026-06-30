@@ -6,7 +6,7 @@
 
 #include "ble.h"
 #include "button.h"
-// #include "display.h"
+#include "display.h"
 #include "fsm.h"
 #include "led.h"
 #include "pins.h"
@@ -63,7 +63,8 @@ void setup()
         storageLoadContactName(i, contactNames[i], NAME_LEN);
         Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
     }
-    // displayInit();
+    displayInit();
+    displayTestAllWhite();
 
     Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
 
@@ -149,7 +150,7 @@ void loop()
 
         if (before != after)
         {
-            // displayResetScroll();
+            displayResetScroll();
             Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                            stateName(after));
         }
@@ -180,7 +181,7 @@ void loop()
     }
 
     const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
-    // displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
-    //               fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
-    //               fsmGetLinkIndex());
+    displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
+                  fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
+                  fsmGetLinkIndex());
 }
