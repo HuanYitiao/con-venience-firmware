@@ -38,35 +38,33 @@ void setup()
     clean();
 }
 
+static ScrollTextState state1, state2, state3, state4;
+
 void loop()
 {
     draw(wolframe_data, 0, 0, 128, 128);
-    drawText("Wolframe", 128, 0, 128, 20, font_variant[2], INV, 5, 5);
-    drawText("Option 1", 144, 42, 112, 16, font_variant[1], BG);
-    drawText("Option 2", 144, 66, 112, 16, font_variant[1]);
-    drawText("Option 3", 144, 90, 112, 16, font_variant[1]);
+    drawText("Wolframe", 128, 0, 128, 20, font_variant[1], INV, 5, 5, 10, &state1);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], BG, 5, 5, 10, &state2);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0], NOR, 5, 5, 10, &state3);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0], NOR, 5, 5, 10, &state4);
     delay(1000);
-    drawText("Option 1", 144, 42, 112, 16, font_variant[1]);
-    drawText("Option 2", 144, 66, 112, 16, font_variant[1], BG);
-    drawText("Option 3", 144, 90, 112, 16, font_variant[1]);
-    delay(1000);
-    drawText("Option 1", 144, 42, 112, 16, font_variant[1]);
-    drawText("Option 2", 144, 66, 112, 16, font_variant[1]);
-    drawText("Option 3", 144, 90, 112, 16, font_variant[1], BG);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], NOR, 5, 5, 10, &state2);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0], BG, 5, 5, 10, &state3);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0], NOR, 5, 5, 10, &state4);
     delay(1000);
 
     draw(G_data, 0, 0, 128, 128);
-    drawText("Günther", 128, 0, 128, 20, font_variant[2], INV, 5, 5);
-    drawText("Option 1", 144, 42, 112, 16, font_variant[1], BG);
-    drawText("Option 2", 144, 66, 112, 16, font_variant[1]);
-    drawText("Option 3", 144, 90, 112, 16, font_variant[1]);
+    drawText("Günther", 128, 0, 128, 20, font_variant[1], INV, 5, 5, 10, &state1);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], BG, 5, 5, 10, &state2);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0], NOR, 5, 5, 10, &state3);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0], NOR, 5, 5, 10, &state4);
     delay(1000);
-    drawText("Option 1", 144, 42, 112, 16, font_variant[1]);
-    drawText("Option 2", 144, 66, 112, 16, font_variant[1], BG);
-    drawText("Option 3", 144, 90, 112, 16, font_variant[1]);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], NOR, 5, 5, 10, &state2);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0], BG, 5, 5, 10, &state3);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0], NOR, 5, 5, 10, &state4);
     delay(1000);
-    drawText("Option 1", 144, 42, 112, 16, font_variant[1]);
-    drawText("Option 2", 144, 66, 112, 16, font_variant[1]);
-    drawText("Option 3", 144, 90, 112, 16, font_variant[1], BG);
+    drawText("Option 1", 144, 42, 112, 16, font_variant[0], NOR, 5, 5, 10, &state2);
+    drawText("Option 2", 144, 66, 112, 16, font_variant[0], NOR, 5, 5, 10, &state3);
+    drawText("Option 3", 144, 90, 112, 16, font_variant[0], BG, 5, 5, 10, &state4);
     delay(1000);
 }
