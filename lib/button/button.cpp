@@ -94,11 +94,11 @@ btn_events_t btn_poll()
 
     uint8_t captured = mcp_read_gpio();
 
-    events.up = btn_read(!((captured >> MCP_PIN_BTN_UP) & 1), &btnUp);
-    events.down = btn_read(!((captured >> MCP_PIN_BTN_DOWN) & 1), &btnDown);
-    events.left = btn_read(!((captured >> MCP_PIN_BTN_LEFT) & 1), &btnLeft);
-    events.right = btn_read(!((captured >> MCP_PIN_BTN_RIGHT) & 1), &btnRight);
-    events.pair = btn_read(!((captured >> MCP_PIN_BTN_PAIR) & 1), &btnPair);
+    events.up = btn_read(!((captured >> PIN_MCP_BTN_UP) & 1), &btnUp);
+    events.down = btn_read(!((captured >> PIN_MCP_BTN_DOWN) & 1), &btnDown);
+    events.left = btn_read(!((captured >> PIN_MCP_BTN_LEFT) & 1), &btnLeft);
+    events.right = btn_read(!((captured >> PIN_MCP_BTN_RIGHT) & 1), &btnRight);
+    events.pair = btn_read(!((captured >> PIN_MCP_BTN_PAIR) & 1), &btnPair);
 
     return events;
 }
