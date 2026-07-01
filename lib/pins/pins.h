@@ -22,8 +22,8 @@
 
 // ── I2S Audio ────────────────────────────────────────────
 #define PIN_I2S_BCLK 10
-#define PIN_I2S_LRCLK 11
-#define PIN_I2S_DOUT 18
+#define PIN_I2S_LRC 11
+#define PIN_I2S_DIN 18
 
 // ── ADC ──────────────────────────────────────────────────
 #define PIN_VBAT_ADC 3
@@ -32,11 +32,11 @@
 #define PIN_MCP_INT 2
 #define MCP23008_ADDR 0x20
 
-#define MCP_PIN_BTN_UP 0
-#define MCP_PIN_BTN_DOWN 1
-#define MCP_PIN_BTN_PAIR 2
-#define MCP_PIN_BTN_LEFT 3
-#define MCP_PIN_BTN_RIGHT 4
-#define MCP_PIN_LEDA 5
-#define MCP_PIN_AUDIO_SD 6
-#define MCP_PIN_PWR_EN 7
+#define PIN_MCP_BTN_UP 0
+#define PIN_MCP_BTN_DOWN 1
+#define PIN_MCP_BTN_PAIR 2
+#define PIN_MCP_BTN_LEFT 3
+#define PIN_MCP_BTN_RIGHT 4
+// #define PIN_MCP_LEDA 5
+#define PIN_MCP_AUDIO_SD 6
+#define PIN_MCP_PWR_EN 7
