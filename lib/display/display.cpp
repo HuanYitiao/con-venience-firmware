@@ -6,8 +6,10 @@
 
 static const SPISettings DISPLAY_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
 
-// U8g2 在这里仅用于字体取模计算，从未通过此构造函数实际发送数据到屏幕；
-// 真正的显示数据由下方 sendCommand/sendData/draw 走硬件 SPI 总线发出。
+// U8g2 仅用于字体取模计算，从未通过此构造函数实际发送数据到屏幕。
+// 不调用 u8g2.begin()：已验证其内部会通过软件SPI真正发送ST75256初始化序列，
+// 与我们手写的寄存器序列冲突。clearBuffer/setFont/drawUTF8/getBufferPtr 均为纯内存操作，
+// 不依赖 begin()。
 static U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2(U8G2_R0,
                                                /* clock=*/PIN_SPI_SCK,
                                                /* data=*/PIN_SPI_MOSI,
@@ -22,8 +24,7 @@ static ScrollTextState scrollName;
 static ScrollTextState scrollLink;
 static ScrollTextState scrollMisc;
 
-static uint8_t avatarCanvas[DISPLAY_AVATAR_WIDTH * DISPLAY_NUM_PAGES];
-static uint8_t uiCanvas[DISPLAY_UI_WIDTH * DISPLAY_NUM_PAGES];
+static uint8_t fullCanvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
 
 // ── low level ST75256 bus ───────────────────────────────────
 static void sendCommand(uint8_t cmd)
@@ -58,7 +59,7 @@ static void setWindow(uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye)
     sendCommand(0x5C);
 }
 
-// canvas: numPages 行 × w 列, 每字节为一组 4 个像素(2bpp 灰阶纵向打包)
+// canvas 布局：numPages 行 × w 列，每字节包含4个像素（2bpp，纵向打包，MSB在上）
 static void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode = NOR)
 {
     int startPage = y / DISPLAY_PAGE_HEIGHT;
@@ -99,23 +100,118 @@ static void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mod
     }
 }
 
-static void cleanRegion(uint8_t *canvas, int x, int w)
+// 从 fullCanvas（DISPLAY_WIDTH 宽）中抠出列范围 [colX, colX+w) 并发送到屏幕对应位置
+// 用于左右分屏场景：头像和文字分别画在 fullCanvas 的不同列范围后独立发送
+static void drawFromFullCanvas(int colX, int y, int w, int h)
 {
-    memset(canvas, 0x00, w * DISPLAY_NUM_PAGES);
-    draw(canvas, x, 0, w, DISPLAY_HEIGHT, NOR);
+    int startPage = y / DISPLAY_PAGE_HEIGHT;
+    int endPage = (y + h - 1) / DISPLAY_PAGE_HEIGHT;
+    int numPages = endPage - startPage + 1;
+
+    setWindow((uint8_t)colX, (uint8_t)(colX + w - 1), (uint8_t)startPage, (uint8_t)endPage);
+
+    for (int p = 0; p < numPages; p++)
+    {
+        for (int c = colX; c < colX + w; c++)
+            sendData(fullCanvas[p * DISPLAY_WIDTH + c]);
+    }
 }
 
-static void cleanAvatar()
+// ── canvas helpers ──────────────────────────────────────────
+static void canvasClear(uint8_t *canvas, int w, int numPages)
 {
-    cleanRegion(avatarCanvas, 0, DISPLAY_AVATAR_WIDTH);
+    memset(canvas, 0x00, w * numPages);
 }
 
-static void cleanUI()
+static void canvasSetPixel(uint8_t *canvas, int canvasW, int x, int y, uint8_t grayVal)
 {
-    cleanRegion(uiCanvas, DISPLAY_UI_X, DISPLAY_UI_WIDTH);
+    if (x < 0 || x >= canvasW || y < 0 || y >= DISPLAY_HEIGHT)
+        return;
+    int page = y / DISPLAY_PAGE_HEIGHT;
+    int sub = y % DISPLAY_PAGE_HEIGHT;
+    canvas[page * canvasW + x] |= grayVal << ((3 - sub) * 2);
 }
 
-// ── scrolling text helper ───────────────────────────────────
+// ── dither ──────────────────────────────────────────────────
+static const uint8_t kBayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+
+static void canvasDitherLeft(uint8_t *canvas, int canvasW, int x, int y, int w, int h)
+{
+    for (int py = y; py < y + h; py++)
+    {
+        for (int px = x; px < x + w; px++)
+        {
+            int col = px - x;
+            int threshold = (col * 16) / w;
+            if (kBayer4[py % 4][px % 4] >= threshold)
+                canvasSetPixel(canvas, canvasW, px, py, DISPLAY_BLACK);
+        }
+    }
+}
+
+static void canvasDitherRight(uint8_t *canvas, int canvasW, int x, int y, int w, int h)
+{
+    for (int py = y; py < y + h; py++)
+    {
+        for (int px = x; px < x + w; px++)
+        {
+            int col = (x + w - 1) - px;
+            int threshold = (col * 16) / w;
+            if (kBayer4[py % 4][px % 4] >= threshold)
+                canvasSetPixel(canvas, canvasW, px, py, DISPLAY_BLACK);
+        }
+    }
+}
+
+// ── avatar ──────────────────────────────────────────────────
+// avatar.bin: ST75256 DDRAM 原生格式，2bpp，page-major column-minor
+// 将头像从 (startX, startY) 开始绘制到 canvas 上
+// avatarRes==128 且 startX==0 时可直接整块透传（最高效且验证正确）
+static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int startY,
+                             const Contact &contact)
+{
+    int avatarRes = contact.avatarResolution;
+
+    if (avatarRes == DISPLAY_AVATAR_WIDTH && startX == 0 && startY == 0 && canvasW == DISPLAY_WIDTH)
+    {
+        // 直接把 avatar.bin 写入 canvas 左半区，每行步进 canvasW
+        int srcBytesPerPage = avatarRes;
+        for (int page = 0; page < DISPLAY_NUM_PAGES; page++)
+        {
+            memcpy(&canvas[page * canvasW], &contact.avatar[page * srcBytesPerPage],
+                   srcBytesPerPage);
+        }
+        return;
+    }
+
+    // 逐像素搬运（非标准尺寸或偏移位置）
+    // avatar.bin 格式：page-major, column-minor, 每字节4个sub-pixel(2bpp)
+    // 每page有 avatarRes 列，每列1字节，字节内从高位到低位依次是 sub-pixel 0..3
+    int srcBytesPerPage = avatarRes;
+
+    for (int y = 0; y < avatarRes; y++)
+    {
+        int srcPage = y / DISPLAY_PAGE_HEIGHT;
+        int srcSub = y % DISPLAY_PAGE_HEIGHT;
+        for (int x = 0; x < avatarRes; x++)
+        {
+            int     srcByteIdx = srcPage * srcBytesPerPage + x;
+            uint8_t srcByte = contact.avatar[srcByteIdx];
+            uint8_t pixel = (srcByte >> ((3 - srcSub) * 2)) & 0x03;
+            if (pixel == DISPLAY_WHITE)
+                continue;
+            int px = startX + x;
+            int py = startY + y;
+            if (px < 0 || px >= canvasW || py < 0 || py >= DISPLAY_HEIGHT)
+                continue;
+            int dstPage = py / DISPLAY_PAGE_HEIGHT;
+            int dstSub = py % DISPLAY_PAGE_HEIGHT;
+            canvas[dstPage * canvasW + px] |= pixel << ((3 - dstSub) * 2);
+        }
+    }
+}
+
+// ── text (via U8g2 取模 → canvas) ──────────────────────────
 static void scrollTextInit(ScrollTextState &s)
 {
     s.offset = 0;
@@ -125,62 +221,58 @@ static void scrollTextInit(ScrollTextState &s)
     s.lastMaxChars = 0;
 }
 
-// 在 uiCanvas 内某个矩形区域绘制文字(可滚动)，通过 U8g2 取模后转写入 uiCanvas
-static void drawTextUI(const char *text, int regionX, int regionY, int regionW, int regionH,
-                       const uint8_t *font, uint8_t textX, uint8_t textY, uint8_t maxChars,
-                       ScrollTextState *scrollState, DrawMode mode = NOR)
+static void canvasDrawText(uint8_t *canvas, int canvasW, const char *text, int regionX, int regionY,
+                           int regionW, int regionH, const uint8_t *font, int textX, int textY,
+                           ScrollTextState *scrollState, DrawMode mode = NOR)
 {
     ScrollTextState  fallback;
     ScrollTextState &s = scrollState ? *scrollState : fallback;
     if (!scrollState)
         scrollTextInit(s);
 
-    bool doScroll = (maxChars > 0 && strlen(text) > maxChars);
-    int  renderX = regionX + textX;
+    u8g2.setFont(font);
+    int textWidth = u8g2.getUTF8Width(text);
+    int availWidth = regionW - textX;
+    int renderX = regionX + textX;
+
+    bool doScroll = (textWidth > availWidth);
 
     if (doScroll)
     {
-        if (strcmp(s.lastText, text) != 0 || s.lastMaxChars != maxChars)
+        if (strcmp(s.lastText, text) != 0 || s.lastMaxChars != (uint8_t)availWidth)
         {
             strncpy(s.lastText, text, sizeof(s.lastText) - 1);
             s.lastText[sizeof(s.lastText) - 1] = '\0';
-            s.lastMaxChars = maxChars;
+            s.lastMaxChars = (uint8_t)availWidth;
             s.offset = 0;
             s.paused = true;
             s.pauseStart = millis();
         }
 
-        u8g2.setFont(font);
-        int textWidth = u8g2.getUTF8Width(text);
-        int availWidth = regionW - textX;
-
-        if (textWidth > availWidth)
+        unsigned long now = millis();
+        if (s.paused)
         {
-            unsigned long now = millis();
-            if (s.paused)
+            if (now - s.pauseStart >= SCROLL_TEXT_PAUSE)
             {
-                if (now - s.pauseStart >= SCROLL_TEXT_PAUSE)
-                {
-                    s.paused = false;
-                    s.offset = 0;
-                    s.lastTime = now;
-                }
+                s.paused = false;
+                s.offset = 0;
+                s.lastTime = now;
             }
-            else
-            {
-                if (now - s.lastTime >= SCROLL_TEXT_INTERVAL)
-                {
-                    s.offset++;
-                    s.lastTime = now;
-                    if (s.offset >= textWidth - availWidth)
-                    {
-                        s.paused = true;
-                        s.pauseStart = now;
-                    }
-                }
-            }
-            renderX -= s.offset;
         }
+        else
+        {
+            if (now - s.lastTime >= SCROLL_TEXT_INTERVAL)
+            {
+                s.offset++;
+                s.lastTime = now;
+                if (s.offset >= textWidth - availWidth)
+                {
+                    s.paused = true;
+                    s.pauseStart = now;
+                }
+            }
+        }
+        renderX -= s.offset;
     }
     else
     {
@@ -205,8 +297,8 @@ static void drawTextUI(const char *text, int regionX, int regionY, int regionW, 
         startPage = 0;
     if (endPage > DISPLAY_NUM_PAGES - 1)
         endPage = DISPLAY_NUM_PAGES - 1;
-    if (startCol < DISPLAY_UI_X)
-        startCol = DISPLAY_UI_X;
+    if (startCol < 0)
+        startCol = 0;
     if (endCol > DISPLAY_WIDTH - 1)
         endCol = DISPLAY_WIDTH - 1;
 
@@ -227,64 +319,29 @@ static void drawTextUI(const char *text, int regionX, int regionY, int regionW, 
                         grayByte |= DISPLAY_BLACK << ((3 - subPixel) * 2);
                 }
             }
-            int localCol = col - DISPLAY_UI_X;
-            uiCanvas[page * DISPLAY_UI_WIDTH + localCol] = grayByte;
+
+            if (mode == INV)
+            {
+                // 高亮反色：有文字像素的位置显示白色，其余保留已有内容（黑底）
+                uint8_t existing = canvas[page * canvasW + col];
+                uint8_t result = existing;
+                for (int sp = 0; sp < 4; sp++)
+                {
+                    uint8_t textPixel = (grayByte >> (sp * 2)) & 0x03;
+                    if (textPixel != DISPLAY_WHITE)
+                        result = (result & ~(0x03 << (sp * 2))) | (DISPLAY_WHITE << (sp * 2));
+                }
+                canvas[page * canvasW + col] = result;
+            }
+            else
+            {
+                canvas[page * canvasW + col] = grayByte;
+            }
         }
     }
-
-    draw(uiCanvas + startPage * DISPLAY_UI_WIDTH + (startCol - DISPLAY_UI_X), startCol,
-         startPage * DISPLAY_PAGE_HEIGHT, endCol - startCol + 1,
-         (endPage - startPage + 1) * DISPLAY_PAGE_HEIGHT, mode);
 }
 
-// ── avatar (left region) ─────────────────────────────────────
-// avatar.bin: ST75256 DDRAM 原生格式, 2bpp, 一字节=同一page内4个横向像素(aabbccdd)
-// 当 avatarResolution == DISPLAY_AVATAR_WIDTH(128) 时可直接整块透传给 draw()
-// 当分辨率更小(居中显示)时, 需要按 2bit 像素逐个搬运到画布对应位置
-static void drawAvatarBitmap(const Contact &contact, int regionX)
-{
-    int avatarRes = contact.avatarResolution;
-
-    if (avatarRes == DISPLAY_AVATAR_WIDTH)
-    {
-        draw(contact.avatar, regionX, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT, NOR);
-        return;
-    }
-
-    int offsetX = (DISPLAY_AVATAR_WIDTH - avatarRes) / 2;
-    int offsetY = (DISPLAY_AVATAR_HEIGHT - avatarRes) / 2;
-    int srcBytesPerRow = avatarRes / 4;
-
-    memset(avatarCanvas, 0x00, sizeof(avatarCanvas));
-
-    for (int y = 0; y < avatarRes; y++)
-    {
-        int srcPage = y / DISPLAY_PAGE_HEIGHT;
-        int srcSub = y % DISPLAY_PAGE_HEIGHT;
-
-        for (int x = 0; x < avatarRes; x++)
-        {
-            int     srcByteIdx = srcPage * srcBytesPerRow + (x / DISPLAY_PAGE_HEIGHT);
-            uint8_t srcByte = contact.avatar[srcByteIdx];
-            int     srcSubX = x % DISPLAY_PAGE_HEIGHT;
-            uint8_t pixel = (srcByte >> ((3 - srcSubX) * 2)) & 0x03;
-
-            int px = offsetX + x;
-            int py = offsetY + y;
-            if (px < 0 || px >= DISPLAY_AVATAR_WIDTH || py < 0 || py >= DISPLAY_AVATAR_HEIGHT)
-                continue;
-
-            int dstPage = py / DISPLAY_PAGE_HEIGHT;
-            int dstSub = py % DISPLAY_PAGE_HEIGHT;
-            avatarCanvas[dstPage * DISPLAY_AVATAR_WIDTH + px] |= pixel << ((3 - dstSub) * 2);
-            (void)srcSub;
-        }
-    }
-
-    draw(avatarCanvas, regionX, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT, NOR);
-}
-
-// ── QR code (full screen, centered, 128x128) ─────────────────
+// ── QR ──────────────────────────────────────────────────────
 static void drawQR(const char *text)
 {
     QRCode  qrcode;
@@ -298,8 +355,7 @@ static void drawQR(const char *text)
     int offsetX = (DISPLAY_WIDTH - qrPixelSize) / 2;
     int offsetY = (DISPLAY_HEIGHT - qrPixelSize) / 2;
 
-    static uint8_t qrCanvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
-    memset(qrCanvas, 0x00, sizeof(qrCanvas));
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
 
     for (int y = 0; y < qrcode.size; y++)
     {
@@ -308,30 +364,35 @@ static void drawQR(const char *text)
             if (!qrcode_getModule(&qrcode, x, y))
                 continue;
             for (int dy = 0; dy < moduleSize; dy++)
-            {
                 for (int dx = 0; dx < moduleSize; dx++)
-                {
-                    int px = offsetX + x * moduleSize + dx;
-                    int py = offsetY + y * moduleSize + dy;
-                    if (px < 0 || px >= DISPLAY_WIDTH || py < 0 || py >= DISPLAY_HEIGHT)
-                        continue;
-                    int page = py / DISPLAY_PAGE_HEIGHT;
-                    int sub = py % DISPLAY_PAGE_HEIGHT;
-                    qrCanvas[page * DISPLAY_WIDTH + px] |= DISPLAY_BLACK << ((3 - sub) * 2);
-                }
-            }
+                    canvasSetPixel(fullCanvas, DISPLAY_WIDTH, offsetX + x * moduleSize + dx,
+                                   offsetY + y * moduleSize + dy, DISPLAY_BLACK);
         }
     }
 
-    draw(qrCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    canvasDitherLeft(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
+    canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
+                      DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+// ── highlight box on canvas ─────────────────────────────────
+static void canvasDrawHighlight(uint8_t *canvas, int canvasW, int x, int y, int w, int h)
+{
+    for (int py = y; py < y + h && py < DISPLAY_HEIGHT; py++)
+    {
+        int     page = py / DISPLAY_PAGE_HEIGHT;
+        int     sub = py % DISPLAY_PAGE_HEIGHT;
+        uint8_t pix = DISPLAY_BLACK << ((3 - sub) * 2);
+        for (int px = x; px < x + w && px < canvasW; px++)
+            canvas[page * canvasW + px] |= pix;
+    }
 }
 
 // ── public API ─────────────────────────────────────────────
 void displayInit()
 {
-    // 注意：不调用 u8g2.begin()。已验证调用 u8g2.begin() 会导致屏幕显示异常
-    // (推测其内部会通过软件SPI真正发送一次针对此型号的初始化序列，与我们手写的
-    // 寄存器序列冲突，覆盖掉正确状态)。u8g2.setDrawColor() 是纯内存操作，不依赖 begin()。
     u8g2.setDrawColor(1);
 
     pinMode(PIN_DISPLAY_RST, OUTPUT);
@@ -375,172 +436,38 @@ void displayInit()
     sendData(0x1f);
 
     sendCommand(0x30);
-
     sendCommand(0x75);
     sendData(0x00);
     sendData(0x1F);
-
     sendCommand(0x15);
     sendData(0x00);
     sendData(0xFF);
-
     sendCommand(0xBC);
     sendData(0x00);
     sendData(0xA6);
-
     sendCommand(0xCA);
     sendData(0x00);
     sendData(0x7F);
     sendData(0x20);
-
     sendCommand(0xF0);
     sendData(0x11);
-
     sendCommand(0x81);
     sendData(0x39);
     sendData(0x04);
-
     sendCommand(0x20);
     sendData(0x0B);
 
     delay(100);
     sendCommand(0xAF);
 
-    cleanAvatar();
-    cleanUI();
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
-// 临时验证函数：直接用真实 Contact 数据测试头像渲染路径是否正确
-// 确认无误后可以删除此函数及 main.cpp 中对它的调用
-void displayTestAvatar(const Contact &self)
+void displayClearAll()
 {
-    Serial0.println("Display test: rendering real avatar");
-    drawAvatarBitmap(self, 0);
-    delay(3000);
-    Serial0.println("Display test: avatar render done");
-}
-
-// 临时验证函数：测试不调用 u8g2.begin() 的情况下，文字渲染路径(drawTextUI)是否正常
-// drawTextUI 依赖 u8g2.clearBuffer()/setFont()/drawUTF8()/getBufferPtr() 这些纯内存操作，
-// 理论上不需要 begin() 真正发送过初始化序列到屏幕才能工作，因为它们只读写 U8g2 内部 RAM buffer
-void displayTestText()
-{
-    Serial0.println("Display test: rendering text without u8g2.begin()");
-    cleanUI();
-    drawTextUI("Hello UI", DISPLAY_UI_X, 20, DISPLAY_UI_WIDTH, 16, u8g2_font_7x13B_tf, 4, 0, 0,
-               nullptr);
-    delay(3000);
-    Serial0.println("Display test: text render done");
-}
-
-// 临时验证函数：原样移植自朋友代码的 test_GrayScale()
-// 256列 × 32页, 按列分4个色阶竖条: 0-63=纯白 64-127=浅灰 128-191=深灰 192-255=纯黑
-// 用于关键对照实验：朋友的数据生成方式在我们的驱动下是否能正确显示
-void displayTestFriendGrayScale()
-{
-    Serial0.println("Display test: friend's test_GrayScale (ported as-is)");
-    static uint8_t buf[256 * 32];
-    for (int col = 0; col < 256; col++)
-    {
-        uint8_t val;
-        if (col < 64)
-            val = 0x00;
-        else if (col < 128)
-            val = 0x55;
-        else if (col < 192)
-            val = 0xAA;
-        else
-            val = 0xFF;
-        for (int page = 0; page < 32; page++)
-            buf[page * 256 + col] = val;
-    }
-    draw(buf, 0, 0, 256, 128, NOR);
-    Serial0.println("Display test: friend's test_GrayScale done");
-}
-
-// 临时验证函数：最简初始化测试
-// 跳过灰度表/窗口地址/对比度/扫描方向等所有设置
-// 只做：硬件复位 -> 进入扩展指令1 -> 退出睡眠 -> 开显示
-// 不调用 displayInit()，独立完成自己的复位和最少命令
-// 用于判断屏幕是否能脱离"全黑"状态，不依赖任何后续精细配置
-void displayTestMinimalInit()
-{
-    Serial0.println("Display test: minimal init sequence");
-
-    pinMode(PIN_DISPLAY_RST, OUTPUT);
-    pinMode(PIN_DISPLAY_CS, OUTPUT);
-    pinMode(PIN_DISPLAY_DC, OUTPUT);
-
-    digitalWrite(PIN_DISPLAY_CS, HIGH);
-
-    digitalWrite(PIN_DISPLAY_RST, LOW);
-    delay(100);
-    digitalWrite(PIN_DISPLAY_RST, HIGH);
-    delay(100);
-
-    sendCommand(0x30);  // 扩展指令 1
-    sendCommand(0x94);  // 退出睡眠模式
-    delay(100);
-    sendCommand(0xAF);  // 开显示
-
-    Serial0.println("Display test: minimal init done, observe screen now");
-}
-
-// 临时验证函数：整屏填充 0x00 (理论上应为全白)
-// 用于验证是否卡在单色模式 —— 若单色模式下非零bit即显示为黑,
-// 那么全0填充应该是唯一能验证"真的能显示白"的方式
-void displayTestAllWhite()
-{
-    Serial0.println("Display test: filling white (0x00)");
-    static uint8_t canvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
-    memset(canvas, 0x00, sizeof(canvas));
-    draw(canvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
-    delay(3000);
-    Serial0.println("Display test: white fill done");
-}
-
-// 临时验证函数：4级灰度棋盘测试
-// 屏幕分成左右两半(各128宽), 每半再分上下两半(各64高)
-// 左上=白(00) 右上=浅灰(01) 左下=深灰(10) 右下=黑(11)
-// 用于肉眼核对实际显示的灰度顺序是否和代码假设一致
-void displayTestGrayChessboard()
-{
-    Serial0.println("Display test: gray chessboard");
-
-    static uint8_t canvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
-
-    for (int page = 0; page < DISPLAY_NUM_PAGES; page++)
-    {
-        int  y = page * DISPLAY_PAGE_HEIGHT;
-        bool topHalf = (y < DISPLAY_HEIGHT / 2);
-
-        for (int col = 0; col < DISPLAY_WIDTH; col++)
-        {
-            bool leftHalf = (col < DISPLAY_WIDTH / 2);
-
-            uint8_t pixel;
-            if (leftHalf && topHalf)
-                pixel = DISPLAY_WHITE;
-            else if (!leftHalf && topHalf)
-                pixel = DISPLAY_LIGHT_GRAY;
-            else if (leftHalf && !topHalf)
-                pixel = DISPLAY_DARK_GRAY;
-            else
-                pixel = DISPLAY_BLACK;
-
-            uint8_t byteVal = 0;
-            byteVal |= pixel << 6;
-            byteVal |= pixel << 4;
-            byteVal |= pixel << 2;
-            byteVal |= pixel << 0;
-
-            canvas[page * DISPLAY_WIDTH + col] = byteVal;
-        }
-    }
-
-    draw(canvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
-    Serial0.println(
-        "Display test: chessboard drawn (TL=white TR=light-gray BL=dark-gray BR=black)");
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void displayResetScroll()
@@ -550,10 +477,19 @@ void displayResetScroll()
     scrollTextInit(scrollMisc);
 }
 
+// ── draw functions ──────────────────────────────────────────
 void drawHomepage(const Contact &self)
 {
-    drawAvatarBitmap(self, 0);
-    cleanUI();
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    int startX = (DISPLAY_WIDTH - self.avatarResolution) / 2;
+    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, startX, 0, self);
+
+    canvasDitherLeft(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
+    canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
+                      DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawPairing(const Contact &self)
@@ -565,36 +501,83 @@ void drawPairing(const Contact &self)
         lastFrameTime = now;
     }
 
-    drawAvatarBitmap(self, 0);
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, 0, 0, self);
 
-    char buf[16];
-    snprintf(buf, sizeof(buf), "Pairing%.*s", pairingFrame, "...");
-    drawTextUI(buf, DISPLAY_UI_X, 50, DISPLAY_UI_WIDTH, 20, u8g2_font_7x13B_tf, 8, 0, 0, nullptr);
+    int cx = DISPLAY_WIDTH / 2;
+    int cy = DISPLAY_HEIGHT / 2;
+
+    u8g2.clearBuffer();
+    u8g2.setDrawColor(1);
+    for (int i = 0; i < 3; i++)
+    {
+        int frameOffset = (pairingFrame + i) % 4;
+        int r = 20 + frameOffset * 6;
+        if (r > 0 && r < 40)
+            u8g2.drawCircle(cx, cy, r, U8G2_DRAW_UPPER_RIGHT | U8G2_DRAW_LOWER_RIGHT);
+    }
+
+    uint8_t *u8g2Buf = u8g2.getBufferPtr();
+    int      bufWidth = u8g2.getBufferTileWidth() * 8;
+
+    for (int page = 0; page < DISPLAY_NUM_PAGES; page++)
+    {
+        for (int col = cx; col < DISPLAY_WIDTH; col++)
+        {
+            for (int subPixel = 0; subPixel < DISPLAY_PAGE_HEIGHT; subPixel++)
+            {
+                int pixelY = page * DISPLAY_PAGE_HEIGHT + subPixel;
+                if (pixelY >= DISPLAY_HEIGHT)
+                    continue;
+                int u8g2Page = pixelY / 8;
+                int u8g2Bit = pixelY % 8;
+                int u8g2Idx = u8g2Page * bufWidth + col;
+                if (u8g2Buf[u8g2Idx] & (1 << u8g2Bit))
+                    fullCanvas[page * DISPLAY_WIDTH + col] |= DISPLAY_BLACK << ((3 - subPixel) * 2);
+            }
+        }
+    }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawContactCard(const Contact &contact)
 {
-    drawAvatarBitmap(contact, 0);
-    drawTextUI(contact.name, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 20, u8g2_font_7x13B_tf, 4, 0, 12,
-               &scrollName);
-    drawTextUI(contact.links[0].url, DISPLAY_UI_X, 20, DISPLAY_UI_WIDTH, 16, u8g2_font_6x10_tf, 4,
-               0, 18, &scrollLink);
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, 0, 0, contact);
+    drawFromFullCanvas(0, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT);
+
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.name, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 16,
+                   u8g2_font_7x13B_tf, 4, 0, &scrollName);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[0].url, DISPLAY_UI_X, 16,
+                   DISPLAY_UI_WIDTH, 14, u8g2_font_6x10_tf, 4, 0, &scrollLink);
+    drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
 }
 
 void drawMenu(bool menuSelection)
 {
-    cleanUI();
-    drawTextUI("Friends", DISPLAY_UI_X, 20, DISPLAY_UI_WIDTH, 16, u8g2_font_6x10_tf, 8, 0, 0,
-               nullptr, menuSelection ? BG : NOR);
-    drawTextUI("My Profile", DISPLAY_UI_X, 36, DISPLAY_UI_WIDTH, 16, u8g2_font_6x10_tf, 8, 0, 0,
-               nullptr, !menuSelection ? BG : NOR);
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    if (menuSelection)
+        canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, 20, DISPLAY_WIDTH, 14);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Friends", 0, 20, DISPLAY_WIDTH, 14,
+                   u8g2_font_6x10_tf, 8, 2, nullptr, menuSelection ? INV : NOR);
+
+    if (!menuSelection)
+        canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, 36, DISPLAY_WIDTH, 14);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "My Profile", 0, 36, DISPLAY_WIDTH, 14,
+                   u8g2_font_6x10_tf, 8, 2, nullptr, !menuSelection ? INV : NOR);
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawContactList(const char names[][NAME_LEN], int count, int index)
 {
-    cleanUI();
-    const int lineH = 12;
-    const int visibleLines = DISPLAY_UI_HEIGHT / lineH;
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    const int lineH = 14;
+    const int visibleLines = DISPLAY_HEIGHT / lineH;
     int       listOffset = 0;
     if (index >= visibleLines)
         listOffset = index - visibleLines + 1;
@@ -604,35 +587,54 @@ void drawContactList(const char names[][NAME_LEN], int count, int index)
         int  ci = i + listOffset;
         int  y = i * lineH;
         bool selected = (ci == index);
-        drawTextUI(names[ci], DISPLAY_UI_X, y, DISPLAY_UI_WIDTH, lineH, u8g2_font_6x10_tf, 4, 1,
-                   selected ? 0 : 18, selected ? nullptr : &scrollMisc, selected ? BG : NOR);
+
+        if (selected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, lineH);
+
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, names[ci], 0, y, DISPLAY_WIDTH, lineH,
+                       u8g2_font_6x10_tf, 4, 2, selected ? nullptr : &scrollMisc,
+                       selected ? INV : NOR);
     }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawProfileAvatar(const Contact &contact)
 {
-    drawAvatarBitmap(contact, 0);
-    drawTextUI(contact.name, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 16, u8g2_font_7x13B_tf, 4, 0, 12,
-               &scrollName);
-    drawTextUI(contact.species, DISPLAY_UI_X, 16, DISPLAY_UI_WIDTH, 14, u8g2_font_6x10_tf, 4, 0, 18,
-               &scrollLink);
-    drawTextUI(contact.from, DISPLAY_UI_X, 30, DISPLAY_UI_WIDTH, 14, u8g2_font_6x10_tf, 4, 0, 18,
-               &scrollMisc);
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, 0, 0, contact);
+    drawFromFullCanvas(0, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT);
+
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.name, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 16,
+                   u8g2_font_7x13B_tf, 4, 0, &scrollName);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.species, DISPLAY_UI_X, 16, DISPLAY_UI_WIDTH,
+                   14, u8g2_font_6x10_tf, 4, 0, &scrollLink);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.from, DISPLAY_UI_X, 30, DISPLAY_UI_WIDTH, 14,
+                   u8g2_font_6x10_tf, 4, 0, &scrollMisc);
+    drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
 }
 
 void drawProfileLinks(const Contact &contact, int linkIndex)
 {
-    cleanUI();
-    const int lineH = 12;
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    const int lineH = 14;
     int       clampedIndex = min(linkIndex, (int)contact.linkCount - 1);
 
     for (int i = 0; i < contact.linkCount; i++)
     {
         int  y = i * lineH;
         bool selected = (i == clampedIndex);
-        drawTextUI(contact.links[i].tag, DISPLAY_UI_X, y, DISPLAY_UI_WIDTH, lineH,
-                   u8g2_font_6x10_tf, 4, 1, 0, nullptr, selected ? BG : NOR);
+
+        if (selected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, lineH);
+
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[i].tag, 0, y, DISPLAY_WIDTH, lineH,
+                       u8g2_font_6x10_tf, 4, 2, nullptr, selected ? INV : NOR);
     }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawProfileQR(const Contact &contact, int linkIndex)
@@ -642,17 +644,24 @@ void drawProfileQR(const Contact &contact, int linkIndex)
 
 void drawStandby()
 {
-    cleanAvatar();
-    cleanUI();
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawLowBattery()
 {
-    cleanAvatar();
-    drawTextUI("Low Battery", DISPLAY_UI_X, 40, DISPLAY_UI_WIDTH, 18, u8g2_font_7x13B_tf, 4, 0, 0,
-               nullptr);
-    drawTextUI("Please charge", DISPLAY_UI_X, 60, DISPLAY_UI_WIDTH, 16, u8g2_font_6x10_tf, 4, 0, 0,
-               nullptr);
+    u8g2.setFont(u8g2_font_7x13B_tf);
+    int w1 = u8g2.getUTF8Width("Low Battery");
+    u8g2.setFont(u8g2_font_6x10_tf);
+    int w2 = u8g2.getUTF8Width("Please charge");
+
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Low Battery", (DISPLAY_WIDTH - w1) / 2, 40,
+                   DISPLAY_WIDTH, 18, u8g2_font_7x13B_tf, 0, 0, nullptr);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Please charge", (DISPLAY_WIDTH - w2) / 2, 60,
+                   DISPLAY_WIDTH, 16, u8g2_font_6x10_tf, 0, 0, nullptr);
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,

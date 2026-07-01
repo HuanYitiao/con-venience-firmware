@@ -11,15 +11,15 @@
 #define DISPLAY_WIDTH 256
 #define DISPLAY_HEIGHT 128
 
+#define DISPLAY_PAGE_HEIGHT 4
+#define DISPLAY_NUM_PAGES (DISPLAY_HEIGHT / DISPLAY_PAGE_HEIGHT)
+
+#define DISPLAY_DITHER_WIDTH (DISPLAY_WIDTH / 8)
 #define DISPLAY_AVATAR_WIDTH 128
 #define DISPLAY_AVATAR_HEIGHT 128
 #define DISPLAY_UI_X 128
 #define DISPLAY_UI_WIDTH 128
 #define DISPLAY_UI_HEIGHT 128
-
-#define DISPLAY_PAGE_HEIGHT 4
-#define DISPLAY_NUM_PAGES (DISPLAY_HEIGHT / DISPLAY_PAGE_HEIGHT)
-
 #define DISPLAY_QR_SIZE 128
 
 enum DrawMode
@@ -48,12 +48,8 @@ struct ScrollTextState
 #define SCROLL_TEXT_PAUSE 1000
 
 void displayInit();
-void displayTestAvatar(const Contact &self);
-void displayTestText();
-void displayTestFriendGrayScale();
-void displayTestMinimalInit();
-void displayTestAllWhite();
-void displayTestGrayChessboard();
+void displayClearAll();
+void displayResetScroll();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    bool menuSelection, bool idleShowQR, const Contact &profileContact,
@@ -68,4 +64,3 @@ void drawProfileLinks(const Contact &contact, int linkIndex);
 void drawProfileQR(const Contact &contact, int linkIndex);
 void drawStandby();
 void drawLowBattery();
-void displayResetScroll();
