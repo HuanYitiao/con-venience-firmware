@@ -61,8 +61,8 @@ typedef struct
 
 static inline uint16_t avatarLen(uint8_t res, AvatarMode mode)
 {
-    uint16_t pixels = (uint16_t)res * (uint16_t)res;
-    return (mode == AVATAR_MODE_4GRAY) ? pixels / 4 : pixels / 8;
+    (void)mode;
+    return ((uint16_t)res * (uint16_t)res) / 4;
 }
 
 bool storageInit(uint8_t csPin = PIN_SD_CS);
