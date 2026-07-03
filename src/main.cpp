@@ -1,201 +1,200 @@
 #include <Arduino.h>
 
+#include <NimBLEDevice.h>
+#include <SPI.h>
 #include <Wire.h>
-#include <math.h>
 
-#include "driver/i2s_std.h"
-#include "freertos/FreeRTOS.h"
+#include "audio.h"
+#include "ble.h"
+#include "button.h"
+#include "display.h"
+#include "fsm.h"
+#include "led.h"
+#include "pins.h"
+#include "storage.h"
 
-#define NOTE_C4 262
-#define NOTE_D4 294
-#define NOTE_E4 330
-#define NOTE_F4 349
-#define NOTE_G4 392
+static Contact self = {};
+static Contact currentContact = {};
+static char    contactNames[16][NAME_LEN] = {};
+static int     contactCount = 0;
+static bool    idleShowQR = false;
 
-typedef struct
+#if 0
+#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}
+#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}
+#else
+#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}
+#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}
+#endif
+
+static bool bleResultReady = false;
+static bool bleResultSuccess = false;
+
+static void onBleComplete(bool success, const uint8_t *data, size_t len)
 {
-    uint32_t freq;
-    uint32_t dur;
-} music_note_t;
-
-static const music_note_t odeToJoy[] = {
-    {NOTE_E4, 300}, {NOTE_E4, 300}, {NOTE_F4, 300}, {NOTE_G4, 300}, {NOTE_G4, 300},
-    {NOTE_F4, 300}, {NOTE_E4, 300}, {NOTE_D4, 300}, {NOTE_C4, 300}, {NOTE_C4, 300},
-    {NOTE_D4, 300}, {NOTE_E4, 300}, {NOTE_E4, 450}, {NOTE_D4, 150}, {NOTE_D4, 600},
-
-    {NOTE_E4, 300}, {NOTE_E4, 300}, {NOTE_F4, 300}, {NOTE_G4, 300}, {NOTE_G4, 300},
-    {NOTE_F4, 300}, {NOTE_E4, 300}, {NOTE_D4, 300}, {NOTE_C4, 300}, {NOTE_C4, 300},
-    {NOTE_D4, 300}, {NOTE_E4, 300}, {NOTE_D4, 450}, {NOTE_C4, 150}, {NOTE_C4, 600},
-};
-
-// ---- 按实际接线改 ----
-#define PIN_I2S_BCLK 10
-#define PIN_I2S_LRC 11
-#define PIN_I2S_DIN 18
-
-#define PIN_I2C_SDA 6
-#define PIN_I2C_SCL 7
-
-#define MCP_ADDR 0x20
-#define MCP_REG_GPIO 0x09
-#define MCP_REG_IODIR 0x00
-#define MCP_AUDIO_SD_CH 6
-// ---------------------
-
-#define SAMPLE_RATE 44100
-#define AMPLITUDE 4000
-
-static const float       TWO_PI_F = 6.28318530718f;
-static i2s_chan_handle_t txHandle = NULL;
-
-static void mcpSetBit(uint8_t ch, bool high)
-{
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_GPIO);
-    Wire.endTransmission(false);
-    Wire.requestFrom(MCP_ADDR, (uint8_t)1);
-    uint8_t val = Wire.read();
-    if (high)
+    bleResultSuccess = success;
+    bleResultReady = true;
+    Serial0.printf("BLE done: %s len=%d\n", success ? "OK" : "FAIL", len);
+    if (success && data != nullptr)
     {
-        val |= (1 << ch);
-    }
-    else
-    {
-        val &= ~(1 << ch);
-    }
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_GPIO);
-    Wire.write(val);
-    Wire.endTransmission();
-}
-
-static void mcpSetOutput(uint8_t ch)
-{
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_IODIR);
-    Wire.endTransmission(false);
-    Wire.requestFrom(MCP_ADDR, (uint8_t)1);
-    uint8_t dir = Wire.read();
-    dir &= ~(1 << ch);
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_IODIR);
-    Wire.write(dir);
-    Wire.endTransmission();
-}
-
-static void audioInit(void)
-{
-    i2s_chan_config_t chanCfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    esp_err_t         err = i2s_new_channel(&chanCfg, &txHandle, NULL);
-    Serial0.printf("i2s_new_channel: %d, handle=%p\n", err, txHandle);
-
-    i2s_std_config_t stdCfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg =
-            I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg =
-            {
-                .mclk = I2S_GPIO_UNUSED,
-                .bclk = (gpio_num_t)PIN_I2S_BCLK,
-                .ws = (gpio_num_t)PIN_I2S_LRC,
-                .dout = (gpio_num_t)PIN_I2S_DIN,
-                .din = I2S_GPIO_UNUSED,
-                .invert_flags = {.mclk_inv = false, .bclk_inv = false, .ws_inv = false},
-            },
-    };
-    i2s_channel_init_std_mode(txHandle, &stdCfg);
-    i2s_channel_enable(txHandle);
-
-    mcpSetBit(MCP_AUDIO_SD_CH, false);  // 先把锁存值设为低
-    mcpSetOutput(MCP_AUDIO_SD_CH);      // 再切输出 → 开机功放 shutdown,无嘶
-}
-
-static void audioEnable(void)
-{
-    mcpSetBit(MCP_AUDIO_SD_CH, true);
-}
-
-static void audioShutdown(void)
-{
-    mcpSetBit(MCP_AUDIO_SD_CH, false);
-}
-
-static void playTone(uint32_t freqHz, uint32_t durationMs)
-{
-    const size_t totalSamples = ((uint64_t)SAMPLE_RATE * durationMs) / 1000;
-    const float  step = TWO_PI_F * (float)freqHz / (float)SAMPLE_RATE;
-    const size_t fadeSamples = SAMPLE_RATE / 200;  // 5ms 淡入淡出
-
-    int16_t buffer[256];
-    float   phase = 0.0f;
-    size_t  played = 0;
-
-    while (played < totalSamples)
-    {
-        size_t n = (totalSamples - played) < 256 ? (totalSamples - played) : 256;
-        for (size_t i = 0; i < n; i++)
-        {
-            size_t idx = played + i;
-            float  env = 1.0f;
-            if (idx < fadeSamples)
-            {
-                env = (float)idx / (float)fadeSamples;  // 淡入
-            }
-            else if (idx >= totalSamples - fadeSamples)
-            {
-                env = (float)(totalSamples - 1 - idx) / (float)fadeSamples;  // 淡出
-            }
-            float wave = (phase < 3.14159265f) ? 1.0f : -1.0f;  // 方波:前半周期 +,后半周期 -
-            buffer[i] = (int16_t)(wave * AMPLITUDE * env);
-            phase += step;
-            if (phase >= TWO_PI_F)
-            {
-                phase -= TWO_PI_F;
-            }
-        }
-        size_t bytesWritten = 0;
-        i2s_channel_write(txHandle, buffer, n * sizeof(int16_t), &bytesWritten, portMAX_DELAY);
-        played += n;
-    }
-}
-
-static void audioRest(uint32_t durationMs)
-{
-    const size_t totalSamples = ((uint64_t)SAMPLE_RATE * durationMs) / 1000;
-    int16_t      buffer[256] = {0};  // 全 0 静音,喂给 I2S 保持 DMA 不欠载
-    size_t       remaining = totalSamples;
-
-    while (remaining > 0)
-    {
-        size_t n = remaining < 256 ? remaining : 256;
-        size_t bytesWritten = 0;
-        i2s_channel_write(txHandle, buffer, n * sizeof(int16_t), &bytesWritten, portMAX_DELAY);
-        remaining -= n;
+        Serial0.printf("Data: %.*s\n", (int)len, (char *)data);
     }
 }
 
 void setup()
 {
-    Serial0.begin(115200);
+    ledInit();
+    ledSetColor(0, 255, 0, 50);
     delay(500);
-    Serial0.println("=== ode to joy ===");
+    ledOff();
+
+    Serial0.begin(115200);
+    NimBLEDevice::init("con-venience");
+    fsmInit();
+    SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
+    delay(200);
+    storageInit();
+    storageLoadSelf(self);
+    Serial0.printf("self: name=%s res=%d links=%d\n", self.name, self.avatarResolution,
+                   self.linkCount);
+    contactCount = storageCountContacts();
+    Serial0.printf("contactCount: %d\n", contactCount);
+    for (int i = 0; i < contactCount; i++)
+    {
+        storageLoadContactName(i, contactNames[i], NAME_LEN);
+        Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
+    }
+    displayInit();
+
+    Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
 
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    audioInit();
+    btn_init();
 
-    audioEnable();
-    audioRest(20);  // 时钟已在跑,SD 已拉高,喂点静音让功放 settle
+    audio_init();
+    audio_setWaveform(AUDIO_WAVE_SQUARE);
 
-    for (size_t i = 0; i < sizeof(odeToJoy) / sizeof(odeToJoy[0]); i++)
-    {
-        playTone(odeToJoy[i].freq, odeToJoy[i].dur);
-        audioRest(30);  // 音符间隔,让连续同音(E E / G G / C C)能分开
-    }
+    static const audio_note_t startupJingle[] = {
+        {262, 140},
+        {294, 140},
+        {330, 400},
+    };
 
-    audioShutdown();
-    Serial0.println("=== done ===");
+    audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
+
+    Serial0.println("audio ready");
+
+    Serial0.println("con-venience ready");
+    Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
+
+    uint8_t myMac[] = MY_MAC;
+    uint8_t peerMac[] = PEER_MAC;
+
+    ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
+    Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
+
+    const char *testProfile = "test_profile_data";
+    bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
 }
 
 void loop()
 {
+    btn_events_t btnEvents = btn_poll();
+
+    event_t event;
+    bool    hasEvent = false;
+
+    if (btnEvents.up == BTN_CLICK)
+    {
+        event = EVENT_UP_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.up == BTN_LONG_PRESS)
+    {
+        event = EVENT_UP_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.down == BTN_CLICK)
+    {
+        event = EVENT_DOWN_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.down == BTN_LONG_PRESS)
+    {
+        event = EVENT_DOWN_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.pair == BTN_CLICK)
+    {
+        event = EVENT_PAIRING_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.pair == BTN_LONG_PRESS)
+    {
+        event = EVENT_PAIRING_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.left == BTN_CLICK)
+    {
+        event = EVENT_LEFT_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.left == BTN_LONG_PRESS)
+    {
+        event = EVENT_LEFT_LONG_PRESS;
+        hasEvent = true;
+    }
+    else if (btnEvents.right == BTN_CLICK)
+    {
+        event = EVENT_RIGHT_CLICK;
+        hasEvent = true;
+    }
+    else if (btnEvents.right == BTN_LONG_PRESS)
+    {
+        event = EVENT_RIGHT_LONG_PRESS;
+        hasEvent = true;
+    }
+
+    if (hasEvent)
+    {
+        state_t before = fsmGetState();
+        fsmHandleEvent(event);
+        state_t after = fsmGetState();
+
+        if (before != after)
+        {
+            displayResetScroll();
+            Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
+                           stateName(after));
+        }
+        else
+        {
+            Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
+        }
+
+        if (after == STATE_MENU)
+        {
+            Serial0.printf("[MENU]  selection: %s\n",
+                           fsmGetMenuSelection() ? "Friends" : "My Profile");
+        }
+
+        if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
+        {
+            idleShowQR = !idleShowQR;
+        }
+    }
+
+    static int lastContactIndex = -1;
+    int        currentIndex = fsmGetContactIndex();
+    if (contactCount > 0 && currentIndex != lastContactIndex)
+    {
+        bool ok = storageLoadContact(currentIndex, currentContact);
+        Serial0.printf("loadContact %d: %s\n", currentIndex, ok ? "OK" : "FAIL");
+        lastContactIndex = currentIndex;
+    }
+
+    const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
+    displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
+                  fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
+                  fsmGetLinkIndex());
 }
