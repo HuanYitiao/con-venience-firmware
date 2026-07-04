@@ -25,6 +25,9 @@
 #define PIN_I2S_LRC 11
 #define PIN_I2S_DIN 18
 
+// ── ACOM ────────────────────────────────────────────
+#define PIN_ACOM 13
+
 // ── ADC ──────────────────────────────────────────────────
 #define PIN_VBAT_ADC 3
 
