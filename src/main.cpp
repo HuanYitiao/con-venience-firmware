@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include "acom.h"
 #include "audio.h"
 #include "ble.h"
 #include "button.h"
@@ -87,14 +88,16 @@ void setup()
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
 
+    acom_init();
+
     uint8_t myMac[] = MY_MAC;
     uint8_t peerMac[] = PEER_MAC;
 
-    ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
-    Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
+    // ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
+    // Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
 
-    const char *testProfile = "test_profile_data";
-    bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
+    // const char *testProfile = "test_profile_data";
+    // bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
 }
 
 void loop()
@@ -163,6 +166,10 @@ void loop()
 
         if (before != after)
         {
+            if (after == STATE_PAIRING)
+            {
+                acom_start();
+            }
             displayResetScroll();
             Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                            stateName(after));
@@ -192,7 +199,10 @@ void loop()
         Serial0.printf("loadContact %d: %s\n", currentIndex, ok ? "OK" : "FAIL");
         lastContactIndex = currentIndex;
     }
-
+    if (fsmGetState() == STATE_PAIRING)
+    {
+        acom_tick();
+    }
     const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
