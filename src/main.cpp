@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include "audio.h"
 #include "ble.h"
 #include "button.h"
 #include "display.h"
@@ -69,6 +70,19 @@ void setup()
 
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
     btn_init();
+
+    audio_init();
+    audio_setWaveform(AUDIO_WAVE_SQUARE);
+
+    static const audio_note_t startupJingle[] = {
+        {262, 140},
+        {294, 140},
+        {330, 400},
+    };
+
+    audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
+
+    Serial0.println("audio ready");
 
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
