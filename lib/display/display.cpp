@@ -548,10 +548,13 @@ void drawContactCard(const Contact &contact)
     drawFromFullCanvas(0, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT);
 
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
-    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.name, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 16,
-                   u8g2_font_7x13B_tf, 4, 0, &scrollName);
-    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[0].url, DISPLAY_UI_X, 16,
-                   DISPLAY_UI_WIDTH, 14, u8g2_font_6x10_tf, 4, 0, &scrollLink);
+    canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 20);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.name, DISPLAY_UI_X, 3, DISPLAY_UI_WIDTH, 20,
+                   u8g2_font_8x13B_tf, 4, 2, &scrollName, INV);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.species, DISPLAY_UI_X, 26, DISPLAY_UI_WIDTH,
+                   14, u8g2_font_7x13B_tf, 4, 2, &scrollLink);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.from, DISPLAY_UI_X, 42, DISPLAY_UI_WIDTH, 14,
+                   u8g2_font_7x13B_tf, 4, 2, &scrollMisc);
     drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
 }
 

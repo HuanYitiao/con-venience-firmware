@@ -11,6 +11,7 @@ static uint8_t       peerType = 0;
 static uint8_t       ownMac[6] = {0};
 static uint8_t       rxBuf[16];
 static int           rxLen = 0;
+static bool          failed = false;
 
 static void get_own_mac(uint8_t mac[6])
 {
@@ -32,6 +33,7 @@ void acom_start()
 {
     active = true;
     macReceived = false;
+    failed = false;
     rxLen = 0;
     startTime = millis();
     lastProbeTime = 0;
@@ -85,6 +87,7 @@ void acom_tick()
     if (millis() - startTime > ACOM_TIMEOUT_MS)
     {
         active = false;
+        failed = true;
         return;
     }
 
@@ -141,4 +144,9 @@ void acom_tick()
             rxLen = 0;
         }
     }
+}
+
+bool acom_failed()
+{
+    return failed;
 }

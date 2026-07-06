@@ -100,6 +100,11 @@ static void dispatchEvent(event_t event)
             }
         }
 
+        if (before == STATE_PAIRING && after != STATE_PAIRING)
+        {
+            acom_stop();
+        }
+
         displayResetScroll();
         Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                        stateName(after));
@@ -262,6 +267,22 @@ void loop()
         if (acom_has_mac(peerMac, nullptr))
         {
             dispatchEvent(EVENT_ACOM_SUCCESS);
+        }
+        else if (acom_failed())
+        {
+            acom_start();
+        }
+        else if (millis() - fsmGetStateEnterTime() > PAIRING_TIMEOUT_MS)
+        {
+            dispatchEvent(EVENT_PAIRING_OVERTIME);
+        }
+    }
+
+    if (fsmGetState() == STATE_CONTACT_CARD)
+    {
+        if (millis() - fsmGetStateEnterTime() > CARD_DISPLAY_MS)
+        {
+            dispatchEvent(EVENT_CARD_OVERTIME);
         }
     }
 
