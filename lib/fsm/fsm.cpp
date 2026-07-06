@@ -110,6 +110,8 @@ const char *stateName(state_t s)
             return "STANDBY";
         case STATE_LOW_BATTERY:
             return "LOW_BATTERY";
+        case STATE_BLE_EXCHANGE:
+            return "BLE_EXCHANGE";
         default:
             return "UNKNOWN";
     }
@@ -158,7 +160,7 @@ void fsmHandleEvent(event_t event)
                     stateEnterTime = millis();
                     break;
                 case EVENT_ACOM_SUCCESS:
-                    currentState = STATE_CONTACT_CARD;
+                    currentState = STATE_BLE_EXCHANGE;
                     stateEnterTime = millis();
                     break;
                 case EVENT_ACOM_FAILURE:
@@ -328,6 +330,23 @@ void fsmHandleEvent(event_t event)
                 case EVENT_PAIRING_LONG_PRESS:
                     currentState = STATE_IDLE;
                     stateEnterTime = millis();
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_BLE_EXCHANGE:
+            switch (event)
+            {
+                case EVENT_PAIRING_LONG_PRESS:
+                    currentState = prePairingState;
+                    break;
+                case EVENT_BLE_SUCCESS:
+                    currentState = STATE_CONTACT_CARD;
+                    break;
+                case EVENT_BLE_FAILURE:
+                    currentState = prePairingState;
                     break;
                 default:
                     break;

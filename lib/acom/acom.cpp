@@ -2,8 +2,6 @@
 
 #include <NimBLEDevice.h>
 
-#include "fsm.h"
-
 static bool          active = false;
 static unsigned long lastProbeTime = 0;
 static unsigned long startTime = 0;
@@ -59,7 +57,11 @@ bool acom_has_mac(uint8_t mac_out[6])
 
 static void send_own_mac()
 {
-    Serial1.write(ownMac, 6);
+    uint8_t frame[7];
+    frame[0] = 0xA5;
+    memcpy(frame + 1, ownMac, 6);
+    Serial1.write(frame, 7);
+    Serial1.flush();
     Serial1.flush();
     delay(10);
     while (Serial1.available())
@@ -78,7 +80,6 @@ void acom_tick()
     if (millis() - startTime > ACOM_TIMEOUT_MS)
     {
         active = false;
-        fsmHandleEvent(EVENT_ACOM_FAILURE);
         return;
     }
 
@@ -87,35 +88,51 @@ void acom_tick()
         lastProbeTime = millis();
         rxLen = 0;
         while (Serial1.available())
+        {
             Serial1.read();
+        }
         send_own_mac();
     }
 
-    while (Serial1.available() && rxLen < 6)
+    while (Serial1.available())
     {
-        rxBuf[rxLen++] = Serial1.read();
+        uint8_t b = Serial1.read();
+        if (rxLen == 0)
+        {
+            if (b == 0xA5)
+            {
+                rxBuf[rxLen++] = b;
+            }
+        }
+        else if (rxLen < 7)
+        {
+            rxBuf[rxLen++] = b;
+        }
     }
 
-    if (rxLen >= 6)
+    if (rxLen >= 7)
     {
-        if (memcmp(rxBuf, ownMac, 6) != 0)
+        if (memcmp(rxBuf + 1, ownMac, 6) != 0)  // rxBuf[0] 是帧头,MAC 从 +1 开始
         {
-            memcpy(peerMac, rxBuf, 6);
+            memcpy(peerMac, rxBuf + 1, 6);
             macReceived = true;
             active = false;
 
             for (int i = 0; i < 5; i++)
             {
                 while (Serial1.available())
+                {
                     Serial1.read();
+                }
                 send_own_mac();
                 delay(50);
             }
 
+            Serial0.printf("[ACOM] raw rx: %02x %02x %02x %02x %02x %02x %02x\n", rxBuf[0],
+                           rxBuf[1], rxBuf[2], rxBuf[3], rxBuf[4], rxBuf[5], rxBuf[6]);
             Serial0.println("[ACOM] mac received");
             Serial0.printf("[ACOM] peer MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", peerMac[0],
                            peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
-            fsmHandleEvent(EVENT_ACOM_SUCCESS);
         }
         else
         {

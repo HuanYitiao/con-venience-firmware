@@ -681,6 +681,9 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
         case STATE_PAIRING:
             drawPairing(self);
             break;
+        case STATE_BLE_EXCHANGE:
+            drawPairing(self);
+            break;
         case STATE_CONTACT_CARD:
             drawContactCard(currentContact);
             break;
