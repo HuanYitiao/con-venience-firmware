@@ -11,6 +11,7 @@
 #include "display.h"
 #include "fsm.h"
 #include "led.h"
+#include "packing.h"
 #include "pins.h"
 #include "storage.h"
 
@@ -20,25 +21,86 @@ static char    contactNames[16][NAME_LEN] = {};
 static int     contactCount = 0;
 static bool    idleShowQR = false;
 
-#if 0
-#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}
-#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}
-#else
-#define PEER_MAC {0x48, 0xf6, 0xee, 0xc7, 0x15, 0x0e}
-#define MY_MAC {0x48, 0xf6, 0xee, 0xc7, 0x1d, 0xf2}
-#endif
-
-static bool bleResultReady = false;
-static bool bleResultSuccess = false;
+static bool    bleResultReady = false;
+static bool    bleResultSuccess = false;
+static uint8_t bleRxBuf[PACKING_BUF_MAX];
+static size_t  bleRxLen = 0;
 
 static void onBleComplete(bool success, const uint8_t *data, size_t len)
 {
     bleResultSuccess = success;
     bleResultReady = true;
-    Serial0.printf("BLE done: %s len=%d\n", success ? "OK" : "FAIL", len);
-    if (success && data != nullptr)
+    if (success && data && len > 0)
     {
-        Serial0.printf("Data: %.*s\n", (int)len, (char *)data);
+        memcpy(bleRxBuf, data, len);
+        bleRxLen = len;
+    }
+}
+
+static void startBle()
+{
+    Serial0.println("startBle called");
+    uint8_t ownMac[6];
+    uint8_t peerMac[6];
+
+    const ble_addr_t *addr = NimBLEDevice::getAddress().getBase();
+    for (int i = 0; i < 6; i++)
+        ownMac[i] = addr->val[5 - i];
+
+    if (!acom_has_mac(peerMac))
+    {
+        Serial0.println("startBle: no peer mac");
+        fsmHandleEvent(EVENT_BLE_FAILURE);
+        return;
+    }
+
+    Serial0.printf("startBle: peer MAC %02x:%02x:%02x:%02x:%02x:%02x\n", peerMac[0], peerMac[1],
+                   peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
+
+    ble_role_t role = (memcmp(ownMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
+    Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
+
+    static uint8_t packBuf[PACKING_BUF_MAX];
+    size_t         packLen = packingPack(packBuf, sizeof(packBuf));
+    Serial0.printf("packLen: %d\n", packLen);
+    if (packLen == 0)
+    {
+        Serial0.println("startBle: pack failed");
+        fsmHandleEvent(EVENT_BLE_FAILURE);
+        return;
+    }
+
+    bleStart(peerMac, role, packBuf, packLen, onBleComplete);
+    Serial0.println("startBle: bleStart called");
+}
+
+static void dispatchEvent(event_t event)
+{
+    state_t before = fsmGetState();
+    fsmHandleEvent(event);
+    state_t after = fsmGetState();
+
+    if (before != after)
+    {
+        if (after == STATE_PAIRING)
+            acom_start();
+
+        if (after == STATE_BLE_EXCHANGE)
+            startBle();
+
+        if (before == STATE_BLE_EXCHANGE && after != STATE_BLE_EXCHANGE)
+        {
+            if (!bleResultReady)
+                bleStop();
+        }
+
+        displayResetScroll();
+        Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
+                       stateName(after));
+    }
+    else
+    {
+        Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
     }
 }
 
@@ -51,6 +113,7 @@ void setup()
 
     Serial0.begin(115200);
     NimBLEDevice::init("con-venience");
+    NimBLEDevice::setMTU(517);
     fsmInit();
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(200);
@@ -84,20 +147,10 @@ void setup()
     audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
 
     Serial0.println("audio ready");
+    acom_init();
 
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
-
-    acom_init();
-
-    uint8_t myMac[] = MY_MAC;
-    uint8_t peerMac[] = PEER_MAC;
-
-    // ble_role_t role = (memcmp(myMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
-    // Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
-
-    // const char *testProfile = "test_profile_data";
-    // bleStart(peerMac, role, (const uint8_t *)testProfile, strlen(testProfile), onBleComplete);
 }
 
 void loop()
@@ -161,25 +214,9 @@ void loop()
     if (hasEvent)
     {
         state_t before = fsmGetState();
-        fsmHandleEvent(event);
-        state_t after = fsmGetState();
+        dispatchEvent(event);
 
-        if (before != after)
-        {
-            if (after == STATE_PAIRING)
-            {
-                acom_start();
-            }
-            displayResetScroll();
-            Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
-                           stateName(after));
-        }
-        else
-        {
-            Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
-        }
-
-        if (after == STATE_MENU)
+        if (fsmGetState() == STATE_MENU)
         {
             Serial0.printf("[MENU]  selection: %s\n",
                            fsmGetMenuSelection() ? "Friends" : "My Profile");
@@ -191,6 +228,37 @@ void loop()
         }
     }
 
+    if (bleResultReady)
+    {
+        bleResultReady = false;
+        if (bleResultSuccess)
+        {
+            bool ok = packingUnpack(bleRxBuf, bleRxLen);
+            Serial0.printf("unpack: %s\n", ok ? "OK" : "FAIL");
+            if (ok)
+            {
+                contactCount = storageCountContacts();
+                storageLoadContactName(contactCount - 1, contactNames[contactCount - 1], NAME_LEN);
+            }
+            fsmHandleEvent(EVENT_BLE_SUCCESS);
+        }
+        else
+        {
+            fsmHandleEvent(EVENT_BLE_FAILURE);
+        }
+    }
+
+    if (fsmGetState() == STATE_PAIRING)
+    {
+        acom_tick();
+
+        uint8_t peerMac[6];
+        if (acom_has_mac(peerMac))
+        {
+            dispatchEvent(EVENT_ACOM_SUCCESS);
+        }
+    }
+
     static int lastContactIndex = -1;
     int        currentIndex = fsmGetContactIndex();
     if (contactCount > 0 && currentIndex != lastContactIndex)
@@ -199,10 +267,7 @@ void loop()
         Serial0.printf("loadContact %d: %s\n", currentIndex, ok ? "OK" : "FAIL");
         lastContactIndex = currentIndex;
     }
-    if (fsmGetState() == STATE_PAIRING)
-    {
-        acom_tick();
-    }
+
     const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
