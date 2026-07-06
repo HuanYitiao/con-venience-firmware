@@ -7,6 +7,7 @@ static unsigned long lastProbeTime = 0;
 static unsigned long startTime = 0;
 static bool          macReceived = false;
 static uint8_t       peerMac[6] = {0};
+static uint8_t       peerType = 0;
 static uint8_t       ownMac[6] = {0};
 static uint8_t       rxBuf[16];
 static int           rxLen = 0;
@@ -45,23 +46,27 @@ void acom_stop()
     active = false;
 }
 
-bool acom_has_mac(uint8_t mac_out[6])
+bool acom_has_mac(uint8_t mac_out[6], uint8_t *type_out)
 {
     if (!macReceived)
     {
         return false;
     }
     memcpy(mac_out, peerMac, 6);
+    if (type_out)
+    {
+        *type_out = peerType;
+    }
     return true;
 }
 
 static void send_own_mac()
 {
-    uint8_t frame[7];
+    uint8_t frame[8];
     frame[0] = 0xA5;
     memcpy(frame + 1, ownMac, 6);
-    Serial1.write(frame, 7);
-    Serial1.flush();
+    frame[7] = NimBLEDevice::getAddress().getType();
+    Serial1.write(frame, 8);
     Serial1.flush();
     delay(10);
     while (Serial1.available())
@@ -100,39 +105,36 @@ void acom_tick()
         if (rxLen == 0)
         {
             if (b == 0xA5)
-            {
                 rxBuf[rxLen++] = b;
-            }
         }
-        else if (rxLen < 7)
+        else if (rxLen < 8)
         {
             rxBuf[rxLen++] = b;
         }
     }
 
-    if (rxLen >= 7)
+    if (rxLen >= 8)
     {
-        if (memcmp(rxBuf + 1, ownMac, 6) != 0)  // rxBuf[0] 是帧头,MAC 从 +1 开始
+        if (memcmp(rxBuf + 1, ownMac, 6) != 0)
         {
             memcpy(peerMac, rxBuf + 1, 6);
+            peerType = rxBuf[7];
             macReceived = true;
             active = false;
 
             for (int i = 0; i < 5; i++)
             {
                 while (Serial1.available())
-                {
                     Serial1.read();
-                }
                 send_own_mac();
                 delay(50);
             }
 
-            Serial0.printf("[ACOM] raw rx: %02x %02x %02x %02x %02x %02x %02x\n", rxBuf[0],
-                           rxBuf[1], rxBuf[2], rxBuf[3], rxBuf[4], rxBuf[5], rxBuf[6]);
+            Serial0.printf("[ACOM] raw rx: %02x %02x %02x %02x %02x %02x %02x %02x\n", rxBuf[0],
+                           rxBuf[1], rxBuf[2], rxBuf[3], rxBuf[4], rxBuf[5], rxBuf[6], rxBuf[7]);
             Serial0.println("[ACOM] mac received");
-            Serial0.printf("[ACOM] peer MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", peerMac[0],
-                           peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
+            Serial0.printf("[ACOM] peer MAC: %02x:%02x:%02x:%02x:%02x:%02x type=%d\n", peerMac[0],
+                           peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5], peerType);
         }
         else
         {

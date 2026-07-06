@@ -42,20 +42,20 @@ static void startBle()
     Serial0.println("startBle called");
     uint8_t ownMac[6];
     uint8_t peerMac[6];
+    uint8_t peerType;
 
     const ble_addr_t *addr = NimBLEDevice::getAddress().getBase();
     for (int i = 0; i < 6; i++)
         ownMac[i] = addr->val[5 - i];
 
-    if (!acom_has_mac(peerMac))
+    if (!acom_has_mac(peerMac, &peerType))
     {
         Serial0.println("startBle: no peer mac");
         fsmHandleEvent(EVENT_BLE_FAILURE);
         return;
     }
-
-    Serial0.printf("startBle: peer MAC %02x:%02x:%02x:%02x:%02x:%02x\n", peerMac[0], peerMac[1],
-                   peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
+    Serial0.printf("startBle: peer MAC %02x:%02x:%02x:%02x:%02x:%02x type=%d\n", peerMac[0],
+                   peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5], peerType);
 
     ble_role_t role = (memcmp(ownMac, peerMac, 6) < 0) ? BLE_ROLE_SERVER : BLE_ROLE_CLIENT;
     Serial0.printf("BLE role: %s\n", role == BLE_ROLE_SERVER ? "SERVER" : "CLIENT");
@@ -70,7 +70,7 @@ static void startBle()
         return;
     }
 
-    bleStart(peerMac, role, packBuf, packLen, onBleComplete);
+    bleStart(peerMac, peerType, role, packBuf, packLen, onBleComplete);
     Serial0.println("startBle: bleStart called");
 }
 
@@ -83,15 +83,21 @@ static void dispatchEvent(event_t event)
     if (before != after)
     {
         if (after == STATE_PAIRING)
+        {
             acom_start();
+        }
 
         if (after == STATE_BLE_EXCHANGE)
+        {
             startBle();
+        }
 
         if (before == STATE_BLE_EXCHANGE && after != STATE_BLE_EXCHANGE)
         {
             if (!bleResultReady)
+            {
                 bleStop();
+            }
         }
 
         displayResetScroll();
@@ -253,7 +259,7 @@ void loop()
         acom_tick();
 
         uint8_t peerMac[6];
-        if (acom_has_mac(peerMac))
+        if (acom_has_mac(peerMac, nullptr))
         {
             dispatchEvent(EVENT_ACOM_SUCCESS);
         }
