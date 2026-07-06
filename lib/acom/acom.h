@@ -14,4 +14,4 @@ void acom_start();
 void acom_stop();
 void acom_tick();
 
-bool acom_has_mac(uint8_t mac_out[6]);
+bool acom_has_mac(uint8_t mac_out[6], uint8_t *type_out);

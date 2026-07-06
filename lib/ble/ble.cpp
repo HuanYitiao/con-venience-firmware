@@ -30,6 +30,7 @@ static volatile bool         s_start_tx = false;
 static uint16_t              s_tx_conn = 0;
 static volatile int          s_last_status;
 static uint32_t              s_recv_mask = 0;
+static uint8_t               s_peer_type = 0;
 
 static void bleFinish(bool success)
 {
@@ -140,34 +141,11 @@ static void serverTxTask(void *)
 
 static void clientTask(void *)
 {
-    NimBLEScan *pScan = NimBLEDevice::getScan();
-    auto        results = pScan->getResults(10000);
-
-    char want[18];
-    snprintf(want, sizeof(want), "%02x:%02x:%02x:%02x:%02x:%02x", s_peer_mac[0], s_peer_mac[1],
-             s_peer_mac[2], s_peer_mac[3], s_peer_mac[4], s_peer_mac[5]);
-
-    const NimBLEAdvertisedDevice *target = nullptr;
-    for (int i = 0; i < results.getCount(); i++)
-    {
-        const NimBLEAdvertisedDevice *dev = results.getDevice(i);
-        if (strcasecmp(dev->getAddress().toString().c_str(), want) == 0)
-        {
-            target = dev;
-            break;
-        }
-    }
-
-    if (!target)
-    {
-        Serial0.println("Client: target not found");
-        bleFinish(false);
-        vTaskDelete(nullptr);
-        return;
-    }
+    NimBLEAddress addr(s_peer_mac, s_peer_type);
+    Serial0.printf("Client: direct connect to %s type=%d\n", addr.toString().c_str(), s_peer_type);
 
     NimBLEClient *pClient = NimBLEDevice::createClient();
-    if (!pClient->connect(target))
+    if (!pClient->connect(addr))
     {
         Serial0.println("Client: connect failed");
         bleFinish(false);
@@ -273,10 +251,10 @@ static void clientTask(void *)
     vTaskDelete(nullptr);
 }
 
-void bleStart(const uint8_t peer_mac[6], ble_role_t role, const uint8_t *my_profile,
-              size_t my_profile_len, ble_callback_t callback)
+void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
+              const uint8_t *my_profile, size_t my_profile_len, ble_callback_t callback)
 {
-    Serial0.println(">>> BLE BUILD MARKER v3 (string match) <<<");
+    Serial0.println(">>> BLE BUILD MARKER v4 (string match) <<<");
 
     if (s_busy)
     {
@@ -287,6 +265,7 @@ void bleStart(const uint8_t peer_mac[6], ble_role_t role, const uint8_t *my_prof
     s_callback = callback;
     s_rx_len = 0;
     memcpy(s_peer_mac, peer_mac, 6);
+    s_peer_type = peer_type;
     memcpy(s_tx_buf, my_profile, my_profile_len);
     s_tx_len = my_profile_len;
 
