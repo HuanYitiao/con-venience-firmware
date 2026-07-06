@@ -152,19 +152,13 @@ void fsmHandleEvent(event_t event)
             switch (event)
             {
                 case EVENT_PAIRING_LONG_PRESS:
-                    currentState = prePairingState;
-                    stateEnterTime = millis();
-                    break;
                 case EVENT_PAIRING_OVERTIME:
+                case EVENT_ACOM_FAILURE:
                     currentState = prePairingState;
                     stateEnterTime = millis();
                     break;
                 case EVENT_ACOM_SUCCESS:
                     currentState = STATE_BLE_EXCHANGE;
-                    stateEnterTime = millis();
-                    break;
-                case EVENT_ACOM_FAILURE:
-                    currentState = prePairingState;
                     stateEnterTime = millis();
                     break;
                 default:
@@ -175,9 +169,13 @@ void fsmHandleEvent(event_t event)
         case STATE_CONTACT_CARD:
             switch (event)
             {
+                case EVENT_PAIRING_LONG_PRESS:
                 case EVENT_CARD_OVERTIME:
                     currentState = STATE_IDLE;
                     stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
                     break;
                 default:
                     break;
@@ -357,4 +355,9 @@ void fsmHandleEvent(event_t event)
             // Completely locked, does not respond to any events
             break;
     }
+}
+
+unsigned long fsmGetStateEnterTime()
+{
+    return stateEnterTime;
 }

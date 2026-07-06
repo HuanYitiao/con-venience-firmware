@@ -37,13 +37,17 @@ typedef enum
     EVENT_OVERTIME_SHUTDOWN
 } event_t;
 
+#define CARD_DISPLAY_MS 10000
+#define PAIRING_TIMEOUT_MS 30000
+
 const char *eventName(event_t e);
 const char *stateName(state_t s);
 
-void    fsmInit();
-void    fsmHandleEvent(event_t event);
-state_t fsmGetState();
-int     fsmGetContactIndex();
-bool    fsmGetMenuSelection();
-int     fsmGetLinkIndex();
-bool    fsmIsViewingSelf();
+void          fsmInit();
+void          fsmHandleEvent(event_t event);
+state_t       fsmGetState();
+int           fsmGetContactIndex();
+bool          fsmGetMenuSelection();
+int           fsmGetLinkIndex();
+bool          fsmIsViewingSelf();
+unsigned long fsmGetStateEnterTime();
