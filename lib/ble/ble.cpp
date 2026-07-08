@@ -12,25 +12,19 @@
 #define RX_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 
 #define PROFILE_LEN_MAX 4608
+#define CHUNK_SIZE 240
+#define REQ_MAGIC 0xBB
 
 static ble_callback_t        s_callback = nullptr;
 static bool                  s_busy = false;
 static uint8_t               s_peer_mac[6];
+static uint8_t               s_peer_type = 0;
 static uint8_t               s_rx_buf[PROFILE_LEN_MAX];
 static size_t                s_rx_len = 0;
-static NimBLECharacteristic *s_rxChar = nullptr;
 static uint8_t               s_tx_buf[PACKING_BUF_MAX];
 static size_t                s_tx_len = 0;
-static uint8_t               s_indicate_buf[PACKING_BUF_MAX];
-static size_t                s_indicate_len = 0;
-static bool                  s_indicate_done = false;
-static NimBLECharacteristic *s_txChar = nullptr;
-static SemaphoreHandle_t     s_indicate_sem = nullptr;
-static volatile bool         s_start_tx = false;
-static uint16_t              s_tx_conn = 0;
-static volatile int          s_last_status;
-static uint32_t              s_recv_mask = 0;
-static uint8_t               s_peer_type = 0;
+static NimBLECharacteristic *s_rxChar = nullptr;
+static volatile uint16_t     s_req_chunk = 0;
 
 static void bleFinish(bool success)
 {
@@ -40,21 +34,24 @@ static void bleFinish(bool success)
         s_callback(success, s_rx_buf, s_rx_len);
 }
 
-class RxCallbacks : public NimBLECharacteristicCallbacks
+// Callbacks for both characteristics.
+// TX_CHAR (READ): onRead serves the chunk the client requested.
+// RX_CHAR (WRITE): onWrite handles chunk requests and incoming profile data.
+class CharCallbacks : public NimBLECharacteristicCallbacks
 {
     void onWrite(NimBLECharacteristic *pChar, NimBLEConnInfo &connInfo) override
     {
         auto   raw = pChar->getValue();
         size_t rawLen = pChar->getLength();
 
-        if (rawLen == 1 && raw[0] == 0xAA)
+        // Chunk request from client: [REQ_MAGIC][index_hi][index_lo]
+        if (rawLen == 3 && raw[0] == REQ_MAGIC)
         {
-            Serial0.println("Server: got ready signal");
-            s_tx_conn = connInfo.getConnHandle();
-            s_start_tx = true;  // hand off to serverTxTask; never send from here
+            s_req_chunk = ((uint16_t)raw[1] << 8) | raw[2];
             return;
         }
 
+        // Otherwise: a profile data chunk [index_hi][index_lo][total_hi][total_lo][data...]
         if (rawLen < 4)
         {
             return;
@@ -71,14 +68,29 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                        totalChunks, s_rx_len);
     }
 
-    void onStatus(NimBLECharacteristic *pChar, NimBLEConnInfo &connInfo, int code) override
+    void onRead(NimBLECharacteristic *pChar, NimBLEConnInfo &connInfo) override
     {
-        Serial0.printf("Server: onStatus code=%d match=%d\n", code, pChar == s_txChar);
-        if (pChar == s_txChar && s_indicate_sem)
+        uint16_t total = (s_tx_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        uint16_t i = s_req_chunk;
+
+        if (i >= total)
         {
-            s_last_status = code;
-            xSemaphoreGive(s_indicate_sem);
+            pChar->setValue((uint8_t *)"", 0);
+            return;
         }
+
+        size_t  offset = (size_t)i * CHUNK_SIZE;
+        size_t  len = min((size_t)CHUNK_SIZE, s_tx_len - offset);
+        uint8_t pkt[CHUNK_SIZE + 4];
+
+        pkt[0] = (i >> 8) & 0xFF;
+        pkt[1] = i & 0xFF;
+        pkt[2] = (total >> 8) & 0xFF;
+        pkt[3] = total & 0xFF;
+        memcpy(pkt + 4, s_tx_buf + offset, len);
+
+        pChar->setValue(pkt, len + 4);
+        Serial0.printf("Server: serving chunk %d/%d on read\n", i + 1, total);
     }
 };
 
@@ -97,48 +109,6 @@ class ServerCallbacks : public NimBLEServerCallbacks
     }
 };
 
-static void serverTxTask(void *)
-{
-    while (!s_start_tx)
-    {
-        delay(10);
-    }
-
-    s_txChar =
-        NimBLEDevice::getServer()->getServiceByUUID(SERVICE_UUID)->getCharacteristic(TX_CHAR_UUID);
-
-    if (s_txChar == nullptr)
-    {
-        Serial0.println("Server: TX char null, abort");
-        vTaskDelete(nullptr);
-        return;
-    }
-
-    const size_t chunkSize = 240;
-    uint16_t     total = (s_tx_len + chunkSize - 1) / chunkSize;
-
-    for (uint16_t i = 0; i < total; i++)
-    {
-        size_t  offset = i * chunkSize;
-        size_t  len = min(chunkSize, s_tx_len - offset);
-        uint8_t pkt[256];
-
-        pkt[0] = (i >> 8) & 0xFF;
-        pkt[1] = i & 0xFF;
-        pkt[2] = (total >> 8) & 0xFF;
-        pkt[3] = total & 0xFF;
-        memcpy(pkt + 4, s_tx_buf + offset, len);
-
-        s_txChar->notify(pkt, len + 4, s_tx_conn);
-        delay(20);
-
-        Serial0.printf("Server: notify chunk %d/%d sent\n", i + 1, total);
-    }
-
-    Serial0.println("Server: all chunks notified");
-    vTaskDelete(nullptr);
-}
-
 static void clientTask(void *)
 {
     NimBLEAddress addr(s_peer_mac, s_peer_type);
@@ -148,6 +118,7 @@ static void clientTask(void *)
     if (!pClient->connect(addr))
     {
         Serial0.println("Client: connect failed");
+        NimBLEDevice::deleteClient(pClient);
         bleFinish(false);
         vTaskDelete(nullptr);
         return;
@@ -155,14 +126,15 @@ static void clientTask(void *)
 
     Serial0.println("Client: connected");
     pClient->setDataLen(251);
-    bool mtuOk = pClient->exchangeMTU();
-    Serial0.printf("MTU: %d\n", pClient->getMTU());
     pClient->exchangeMTU();
+    Serial0.printf("MTU: %d\n", pClient->getMTU());
+
     NimBLERemoteService *pSvc = pClient->getService(SERVICE_UUID);
     if (!pSvc)
     {
         Serial0.println("Client: service not found");
         pClient->disconnect();
+        NimBLEDevice::deleteClient(pClient);
         bleFinish(false);
         vTaskDelete(nullptr);
         return;
@@ -171,90 +143,109 @@ static void clientTask(void *)
     NimBLERemoteCharacteristic *pTx = pSvc->getCharacteristic(TX_CHAR_UUID);
     NimBLERemoteCharacteristic *pRx = pSvc->getCharacteristic(RX_CHAR_UUID);
 
-    if (pTx && pTx->canNotify())
+    if (!pTx || !pRx || !pTx->canRead() || !pRx->canWrite())
     {
-        s_indicate_len = 0;
-        s_indicate_done = false;
-        s_recv_mask = 0;
-
-        bool subOk = pTx->subscribe(
-            false,
-            [](NimBLERemoteCharacteristic *pChar, uint8_t *data, size_t len, bool isNotify)
-            {
-                if (len < 4)
-                    return;
-
-                uint16_t chunkIndex = ((uint16_t)data[0] << 8) | data[1];
-                uint16_t totalChunks = ((uint16_t)data[2] << 8) | data[3];
-                size_t   dataLen = len - 4;
-
-                s_recv_mask |= (1u << chunkIndex);
-
-                memcpy(s_indicate_buf + s_indicate_len, data + 4, dataLen);
-                s_indicate_len += dataLen;
-
-                Serial0.printf("Client: notify chunk %d/%d total=%d\n", chunkIndex + 1, totalChunks,
-                               s_indicate_len);
-
-                if (chunkIndex + 1 == totalChunks)
-                {
-                    uint32_t expected =
-                        (totalChunks >= 32) ? 0xFFFFFFFF : ((1u << totalChunks) - 1);
-                    s_indicate_done = (s_recv_mask == expected);
-                }
-            });
-        Serial0.printf("Client: subscribe notify = %s\n", subOk ? "OK" : "FAIL");
-
-        uint8_t ready = 0xAA;
-        pRx->writeValue(&ready, 1, false);
-        Serial0.println("Client: sent ready signal");
-
-        uint32_t timeout = millis() + 10000;
-        while (!s_indicate_done && millis() < timeout)
-            delay(10);
-
-        if (s_indicate_done)
-        {
-            s_rx_len = s_indicate_len;
-            memcpy(s_rx_buf, s_indicate_buf, s_rx_len);
-            Serial0.printf("Client: indicate done, %d bytes\n", s_rx_len);
-        }
+        Serial0.println("Client: characteristics not usable");
+        pClient->disconnect();
+        NimBLEDevice::deleteClient(pClient);
+        bleFinish(false);
+        vTaskDelete(nullptr);
+        return;
     }
 
-    if (pRx && pRx->canWrite())
+    // --- Receive server's profile: client-driven request/read loop ---
+    s_rx_len = 0;
+    uint16_t i = 0;
+    uint16_t total = 1;
+    int      retries = 0;
+    bool     recvOk = true;
+
+    while (i < total)
     {
-        const size_t chunkSize = 240;
-        uint16_t     totalChunks = (s_tx_len + chunkSize - 1) / chunkSize;
-        bool         writeOk = true;
-
-        for (uint16_t i = 0; i < totalChunks; i++)
+        uint8_t req[3] = {REQ_MAGIC, (uint8_t)(i >> 8), (uint8_t)(i & 0xFF)};
+        if (!pRx->writeValue(req, 3, true))
         {
-            size_t  offset = i * chunkSize;
-            size_t  len = min(chunkSize, s_tx_len - offset);
-            uint8_t pkt[256];
-
-            pkt[0] = (i >> 8) & 0xFF;
-            pkt[1] = i & 0xFF;
-            pkt[2] = (totalChunks >> 8) & 0xFF;
-            pkt[3] = totalChunks & 0xFF;
-            memcpy(pkt + 4, s_tx_buf + offset, len);
-
-            pRx->writeValue(pkt, len + 4, true);
+            if (++retries > 5)
+            {
+                recvOk = false;
+                break;
+            }
             delay(20);
-
-            Serial0.printf("Client: chunk %d/%d sent\n", i + 1, totalChunks);
+            continue;
         }
+
+        NimBLEAttValue val = pTx->readValue();
+        if (val.length() < 4)
+        {
+            if (++retries > 5)
+            {
+                recvOk = false;
+                break;
+            }
+            delay(20);
+            continue;
+        }
+
+        const uint8_t *d = val.data();
+        uint16_t       idx = ((uint16_t)d[0] << 8) | d[1];
+        total = ((uint16_t)d[2] << 8) | d[3];
+        size_t dataLen = val.length() - 4;
+
+        if (idx != i)
+        {
+            if (++retries > 5)
+            {
+                recvOk = false;
+                break;
+            }
+            delay(20);
+            continue;
+        }
+
+        retries = 0;
+        memcpy(s_rx_buf + s_rx_len, d + 4, dataLen);
+        s_rx_len += dataLen;
+        Serial0.printf("Client: read chunk %d/%d total=%d\n", idx + 1, total, s_rx_len);
+        i++;
+    }
+
+    if (recvOk)
+    {
+        Serial0.printf("Client: read done, %d bytes\n", s_rx_len);
+    }
+    else
+    {
+        Serial0.println("Client: read failed");
+    }
+
+    // --- Send own profile to server via write ---
+    uint16_t txTotal = (s_tx_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    for (uint16_t j = 0; j < txTotal; j++)
+    {
+        size_t  offset = (size_t)j * CHUNK_SIZE;
+        size_t  len = min((size_t)CHUNK_SIZE, s_tx_len - offset);
+        uint8_t pkt[CHUNK_SIZE + 4];
+
+        pkt[0] = (j >> 8) & 0xFF;
+        pkt[1] = j & 0xFF;
+        pkt[2] = (txTotal >> 8) & 0xFF;
+        pkt[3] = txTotal & 0xFF;
+        memcpy(pkt + 4, s_tx_buf + offset, len);
+
+        pRx->writeValue(pkt, len + 4, true);
+        Serial0.printf("Client: chunk %d/%d sent\n", j + 1, txTotal);
     }
 
     pClient->disconnect();
-    bleFinish(s_rx_len > 0);
+    NimBLEDevice::deleteClient(pClient);
+    bleFinish(recvOk && s_rx_len > 0);
     vTaskDelete(nullptr);
 }
 
 void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
               const uint8_t *my_profile, size_t my_profile_len, ble_callback_t callback)
 {
-    Serial0.println(">>> BLE BUILD MARKER v4 (string match) <<<");
+    Serial0.println(">>> BLE BUILD MARKER v5 (read model) <<<");
 
     if (s_busy)
     {
@@ -263,7 +254,10 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
     Serial0.printf("bleStart: my_profile_len=%d\n", my_profile_len);
     s_busy = true;
     s_callback = callback;
+
     s_rx_len = 0;
+    s_req_chunk = 0;
+
     memcpy(s_peer_mac, peer_mac, 6);
     s_peer_type = peer_type;
     memcpy(s_tx_buf, my_profile, my_profile_len);
@@ -273,11 +267,15 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
     pServer->setCallbacks(new ServerCallbacks());
     NimBLEService *pSvc = pServer->createService(SERVICE_UUID);
 
-    NimBLECharacteristic *pTx =
-        pSvc->createCharacteristic(TX_CHAR_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    static CharCallbacks charCb;
+
+    NimBLECharacteristic *pTx = pSvc->createCharacteristic(TX_CHAR_UUID, NIMBLE_PROPERTY::READ);
+    pTx->setCallbacks(&charCb);
 
     s_rxChar = pSvc->createCharacteristic(RX_CHAR_UUID, NIMBLE_PROPERTY::WRITE, PACKING_BUF_MAX);
-    s_rxChar->setCallbacks(new RxCallbacks());
+    s_rxChar->setCallbacks(&charCb);
+
+    pSvc->start();
 
     NimBLEAdvertising *pAdv = NimBLEDevice::getAdvertising();
     pAdv->addServiceUUID(SERVICE_UUID);
@@ -287,19 +285,7 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
     {
         xTaskCreate(clientTask, "ble_client", 4096, nullptr, 1, nullptr);
     }
-    else
-    {
-        s_start_tx = false;
-        if (s_indicate_sem == nullptr)
-        {
-            s_indicate_sem = xSemaphoreCreateBinary();
-        }
-        else
-        {
-            xSemaphoreTake(s_indicate_sem, 0);  // drain any stale give
-        }
-        xTaskCreate(serverTxTask, "ble_srv_tx", 4096, nullptr, 1, nullptr);
-    }
+    // Server role needs no task: it responds entirely through callbacks.
 }
 
 void bleStop()
