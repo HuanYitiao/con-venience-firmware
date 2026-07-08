@@ -2,12 +2,20 @@
 
 #include <esp32-hal.h>
 
+enum
+{
+    MENU_PROFILE = 0,
+    MENU_FRIENDS,
+    MENU_SETTINGS,
+    MENU_COUNT
+};
+
 static state_t       currentState = STATE_IDLE;
 static state_t       prePairingState = STATE_IDLE;
 static state_t       preProfileState = STATE_MENU;
 static int           contactIndex = 0;
 static unsigned long stateEnterTime = 0;
-static bool          menuOnFriends = true;
+static int           menuIndex = MENU_PROFILE;
 static int           linkIndex = 0;
 
 void fsmInit()
@@ -17,6 +25,7 @@ void fsmInit()
     preProfileState = STATE_MENU;
     contactIndex = 0;
     stateEnterTime = millis();
+    menuIndex = MENU_PROFILE;
     linkIndex = 0;
 }
 
@@ -30,9 +39,9 @@ int fsmGetContactIndex()
     return contactIndex;
 }
 
-bool fsmGetMenuSelection()
+int fsmGetMenuSelection()
 {
-    return menuOnFriends;
+    return menuIndex;
 }
 
 int fsmGetLinkIndex()
@@ -106,6 +115,8 @@ const char *stateName(state_t s)
             return "PROFILE_LINKS";
         case STATE_PROFILE_QR:
             return "PROFILE_QR";
+        case STATE_SETTINGS:
+            return "SETTINGS";
         case STATE_STANDBY:
             return "STANDBY";
         case STATE_LOW_BATTERY:
@@ -190,19 +201,24 @@ void fsmHandleEvent(event_t event)
                     stateEnterTime = millis();
                     break;
                 case EVENT_UP_CLICK:
+                    menuIndex = (menuIndex + MENU_COUNT - 1) % MENU_COUNT;
+                    break;
                 case EVENT_DOWN_CLICK:
-                    menuOnFriends = !menuOnFriends;
+                    menuIndex = (menuIndex + 1) % MENU_COUNT;
                     break;
                 case EVENT_RIGHT_CLICK:
-                    if (menuOnFriends)
+                    switch (menuIndex)
                     {
-                        currentState = STATE_CONTACT_LIST;
-                    }
-                    else
-                    {
-                        preProfileState = currentState;
-                        currentState = STATE_PROFILE_AVATAR;  // Switch between avatar/links/qr
-                                                              // handled by display
+                        case MENU_PROFILE:
+                            preProfileState = currentState;
+                            currentState = STATE_PROFILE_AVATAR;
+                            break;
+                        case MENU_FRIENDS:
+                            currentState = STATE_CONTACT_LIST;
+                            break;
+                        case MENU_SETTINGS:
+                            currentState = STATE_SETTINGS;
+                            break;
                     }
                     stateEnterTime = millis();
                     break;
@@ -312,6 +328,21 @@ void fsmHandleEvent(event_t event)
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
                     currentState = STATE_STANDBY;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_SETTINGS:
+            switch (event)
+            {
+                case EVENT_LEFT_CLICK:
+                    currentState = STATE_MENU;  // side effects (AP down / BLE up) in dispatchEvent
                     stateEnterTime = millis();
                     break;
                 case EVENT_BATTERY_LOW:

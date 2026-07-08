@@ -14,6 +14,7 @@
 #include "packing.h"
 #include "pins.h"
 #include "storage.h"
+#include "wifi_config.h"
 
 static Contact self = {};
 static Contact currentContact = {};
@@ -105,6 +106,15 @@ static void dispatchEvent(event_t event)
             acom_stop();
         }
 
+        if (after == STATE_SETTINGS)
+        {
+            wifi_config_start();
+        }
+        if (before == STATE_SETTINGS && after != STATE_SETTINGS)
+        {
+            wifi_config_stop();
+        }
+
         displayResetScroll();
         Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                        stateName(after));
@@ -112,6 +122,30 @@ static void dispatchEvent(event_t event)
     else
     {
         Serial0.printf("[EVENT] %-20s | %s (no change)\n", eventName(event), stateName(before));
+    }
+}
+
+void settingsService()
+{
+    static bool wasActive = false;
+
+    if (fsmGetState() != STATE_SETTINGS)
+    {
+        wasActive = false;
+        return;
+    }
+
+    wifi_config_loop();
+
+    static bool lastConn = false;
+    static bool lastDone = false;
+    if (!wasActive || wifi_config_client_connected() != lastConn
+        || wifi_config_upload_done() != lastDone)
+    {
+        wasActive = true;
+        lastConn = wifi_config_client_connected();
+        lastDone = wifi_config_upload_done();
+        drawSettings();
     }
 }
 
@@ -229,8 +263,9 @@ void loop()
 
         if (fsmGetState() == STATE_MENU)
         {
-            Serial0.printf("[MENU]  selection: %s\n",
-                           fsmGetMenuSelection() ? "Friends" : "My Profile");
+            int         sel = fsmGetMenuSelection();
+            const char *name = sel == 0 ? "My Profile" : sel == 1 ? "Friends" : "Settings";
+            Serial0.printf("[MENU]  selection: %s\n", name);
         }
 
         if (event == EVENT_PAIRING_CLICK && before == STATE_IDLE)
@@ -285,6 +320,8 @@ void loop()
             dispatchEvent(EVENT_CARD_OVERTIME);
         }
     }
+
+    settingsService();
 
     static int lastContactIndex = -1;
     int        currentIndex = fsmGetContactIndex();
