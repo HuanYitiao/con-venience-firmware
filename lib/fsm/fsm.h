@@ -13,6 +13,7 @@ typedef enum
     STATE_STANDBY,
     STATE_LOW_BATTERY,
     STATE_BLE_EXCHANGE,
+    STATE_SETTINGS
 } state_t;
 
 typedef enum
@@ -47,7 +48,7 @@ void          fsmInit();
 void          fsmHandleEvent(event_t event);
 state_t       fsmGetState();
 int           fsmGetContactIndex();
-bool          fsmGetMenuSelection();
+int           fsmGetMenuSelection();
 int           fsmGetLinkIndex();
 bool          fsmIsViewingSelf();
 unsigned long fsmGetStateEnterTime();

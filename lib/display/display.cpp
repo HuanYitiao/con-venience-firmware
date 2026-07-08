@@ -1,6 +1,7 @@
 #include "display.h"
 
 #include "qrcode.h"
+#include "wifi_config.h"
 
 #define PAIRING_FRAME_INTERVAL 200
 
@@ -342,11 +343,11 @@ static void canvasDrawText(uint8_t *canvas, int canvasW, const char *text, int r
 }
 
 // ── QR ──────────────────────────────────────────────────────
-static void drawQR(const char *text)
+static void drawQR(const char *text, uint8_t version = 8, uint8_t ecc = ECC_LOW)
 {
     QRCode  qrcode;
     uint8_t qrcodeData[qrcode_getBufferSize(8)];
-    qrcode_initText(&qrcode, qrcodeData, 8, ECC_LOW, text);
+    qrcode_initText(&qrcode, qrcodeData, version, ecc, text);
 
     int moduleSize = DISPLAY_QR_SIZE / qrcode.size;
     if (moduleSize < 1)
@@ -558,21 +559,50 @@ void drawContactCard(const Contact &contact)
     drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
 }
 
-void drawMenu(bool menuSelection)
+void drawMenu(int menuSelection)
 {
+    static const char *items[3] = {"My Profile", "Friends", "Settings"};
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
 
-    if (menuSelection)
-        canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, 20, DISPLAY_WIDTH, 14);
-    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Friends", 0, 20, DISPLAY_WIDTH, 14,
-                   u8g2_font_6x10_tf, 8, 2, nullptr, menuSelection ? INV : NOR);
+    for (int i = 0; i < 3; i++)
+    {
+        int  y = 20 + i * 16;
+        bool selected = (menuSelection == i);
 
-    if (!menuSelection)
-        canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, 36, DISPLAY_WIDTH, 14);
-    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "My Profile", 0, 36, DISPLAY_WIDTH, 14,
-                   u8g2_font_6x10_tf, 8, 2, nullptr, !menuSelection ? INV : NOR);
+        if (selected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, 14);
+
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, items[i], 0, y, DISPLAY_WIDTH, 14,
+                       u8g2_font_6x10_tf, 8, 2, nullptr, selected ? INV : NOR);
+    }
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+void drawSettings()
+{
+    if (!wifi_config_client_connected())
+    {
+        drawQR(wifi_config_wifi_qr(), 3, ECC_LOW);
+    }
+    else if (!wifi_config_upload_done())
+    {
+        drawQR(wifi_config_url(), 2, ECC_MEDIUM);
+    }
+    else
+    {
+        u8g2.setFont(u8g2_font_7x13B_tf);
+        int w1 = u8g2.getUTF8Width("Saved");
+        u8g2.setFont(u8g2_font_6x10_tf);
+        int w2 = u8g2.getUTF8Width("Reboot to apply");
+
+        canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Saved", (DISPLAY_WIDTH - w1) / 2, 40,
+                       DISPLAY_WIDTH, 18, u8g2_font_7x13B_tf, 0, 0, nullptr);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Reboot to apply", (DISPLAY_WIDTH - w2) / 2, 60,
+                       DISPLAY_WIDTH, 16, u8g2_font_6x10_tf, 0, 0, nullptr);
+        draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    }
 }
 
 void drawContactList(const char names[][NAME_LEN], int count, int index)
@@ -670,8 +700,7 @@ void drawLowBattery()
 
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
-                   bool menuSelection, bool idleShowQR, const Contact &profileContact,
-                   int linkIndex)
+                   int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex)
 {
     switch (state)
     {
