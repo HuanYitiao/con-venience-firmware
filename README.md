@@ -11,14 +11,17 @@ Designed for fursuiters — two wearers touch devices to exchange contact inform
 ## Hardware
 
 - ESP32-C6-DevKitC-1
-- 2.42" SSD1309 OLED (128×64)
-- MicroSD card storage
+- JLX256128G-921/931 ST75256 4 grey screen 
+- MicroSD card storage 
+- MCP23008 GPIO expander
+- MMAX 98357A audio driver
 
 ## Status
 
-- ACOM physical contact → BLE MAC exchange
-- BLE bidirectional profile transfer
-- Production display upgrade (SSD1309 → ST75256)
+- Firmware for prototype done
+- Power trails design
+- Upgrade to MCP23017 discussion
+- RTC related functions
 
 ## Build
 
