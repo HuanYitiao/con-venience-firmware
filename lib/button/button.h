@@ -1,5 +1,4 @@
 #pragma once
-#include <stdbool.h>
 #include <stdint.h>
 
 #define LONG_PRESS_MS 300
@@ -29,7 +28,6 @@ typedef struct
     btn_event_t pair;
 } btn_events_t;
 
-btn_event_t btn_read(bool pressed, btn_state_t *state);
-
-void         btn_init();
-btn_events_t btn_poll();
+void         btnInit();
+btn_event_t  btnRead(bool pressed, btn_state_t *state);
+btn_events_t btnPoll();
