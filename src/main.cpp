@@ -10,6 +10,7 @@
 #include "button.h"
 #include "display.h"
 #include "fsm.h"
+#include "io_expander.h"
 #include "led.h"
 #include "packing.h"
 #include "pins.h"
@@ -178,7 +179,8 @@ void setup()
     Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
 
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    btn_init();
+    ioexpInit();
+    btnInit();
 
     audio_init();
     audio_setWaveform(AUDIO_WAVE_SQUARE);
@@ -200,7 +202,7 @@ void setup()
 
 void loop()
 {
-    btn_events_t btnEvents = btn_poll();
+    btn_events_t btnEvents = btnPoll();
 
     event_t event;
     bool    hasEvent = false;

@@ -31,9 +31,9 @@
 // ── ADC ──────────────────────────────────────────────────
 #define PIN_VBAT_ADC 3
 
-// ── Buttons (via MCP23008) ───────────────────────────────
+// ── Buttons (via MCP23017) ───────────────────────────────
 #define PIN_MCP_INT 2
-#define MCP23008_ADDR 0x20
+#define MCP23017_ADDR 0x20
 
 #define PIN_MCP_BTN_UP 0
 #define PIN_MCP_BTN_DOWN 1
