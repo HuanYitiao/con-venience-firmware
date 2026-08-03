@@ -109,11 +109,11 @@ static void dispatchEvent(event_t event)
 
         if (after == STATE_SETTINGS)
         {
-            wifi_config_start();
+            wifiConfigStart();
         }
         if (before == STATE_SETTINGS && after != STATE_SETTINGS)
         {
-            wifi_config_stop();
+            wifiConfigStop();
         }
 
         displayResetScroll();
@@ -136,16 +136,15 @@ void settingsService()
         return;
     }
 
-    wifi_config_loop();
+    wifiConfigLoop();
 
     static bool lastConn = false;
     static bool lastDone = false;
-    if (!wasActive || wifi_config_client_connected() != lastConn
-        || wifi_config_upload_done() != lastDone)
+    if (!wasActive || wifiConfigClientConnected() != lastConn || wifiConfigUploadDone() != lastDone)
     {
         wasActive = true;
-        lastConn = wifi_config_client_connected();
-        lastDone = wifi_config_upload_done();
+        lastConn = wifiConfigClientConnected();
+        lastDone = wifiConfigUploadDone();
         drawSettings();
     }
 }
