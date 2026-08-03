@@ -581,13 +581,13 @@ void drawMenu(int menuSelection)
 
 void drawSettings()
 {
-    if (!wifi_config_client_connected())
+    if (!wifiConfigClientConnected())
     {
-        drawQR(wifi_config_wifi_qr(), 3, ECC_LOW);
+        drawQR(wifiConfigWifiQr(), 3, ECC_LOW);
     }
-    else if (!wifi_config_upload_done())
+    else if (!wifiConfigUploadDone())
     {
-        drawQR(wifi_config_url(), 2, ECC_MEDIUM);
+        drawQR(wifiConfigUrl(), 2, ECC_MEDIUM);
     }
     else
     {

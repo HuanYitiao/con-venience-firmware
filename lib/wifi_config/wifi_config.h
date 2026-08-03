@@ -2,14 +2,14 @@
 
 #include <Arduino.h>
 
-void wifi_config_start();
-void wifi_config_stop();
-void wifi_config_loop();
+void wifiConfigStart();
+void wifiConfigStop();
+void wifiConfigLoop();
 
-bool     wifi_config_client_connected();
-bool     wifi_config_upload_done();
-uint32_t wifi_config_idle_ms();
+bool     wifiConfigClientConnected();
+bool     wifiConfigUploadDone();
+uint32_t wifiConfigIdleMs();
 
-const char *wifi_config_wifi_qr();
-const char *wifi_config_url();
-const char *wifi_config_ssid();
+const char *wifiConfigWifiQr();
+const char *wifiConfigUrl();
+const char *wifiConfigSsid();
