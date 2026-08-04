@@ -15,7 +15,7 @@ static uint8_t       rxBuf[16];
 static int           rxLen = 0;
 static bool          failed = false;
 
-static void get_own_mac(uint8_t mac[6])
+static void getOwnMac(uint8_t mac[6])
 {
     const ble_addr_t *addr = NimBLEDevice::getAddress().getBase();
     for (int i = 0; i < 6; i++)
@@ -24,14 +24,14 @@ static void get_own_mac(uint8_t mac[6])
     }
 }
 
-void acom_init()
+void acomInit()
 {
     pinMode(PIN_ACOM, OUTPUT_OPEN_DRAIN);
     Serial1.begin(ACOM_BAUD, SERIAL_8N1, PIN_ACOM, PIN_ACOM);
-    get_own_mac(ownMac);
+    getOwnMac(ownMac);
 }
 
-void acom_start()
+void acomStart()
 {
     active = true;
     macReceived = false;
@@ -45,12 +45,12 @@ void acom_start()
     }
 }
 
-void acom_stop()
+void acomStop()
 {
     active = false;
 }
 
-bool acom_has_mac(uint8_t mac_out[6], uint8_t *type_out)
+bool acomHasMac(uint8_t mac_out[6], uint8_t *type_out)
 {
     if (!macReceived)
     {
@@ -64,7 +64,7 @@ bool acom_has_mac(uint8_t mac_out[6], uint8_t *type_out)
     return true;
 }
 
-static void send_own_mac()
+static void sendWwnMac()
 {
     uint8_t frame[ACOM_FRAME_LEN];
     frame[0] = ACOM_HEADER;
@@ -80,7 +80,7 @@ static void send_own_mac()
     }
 }
 
-void acom_tick()
+void acomTick()
 {
     if (!active)
     {
@@ -102,7 +102,7 @@ void acom_tick()
         {
             Serial1.read();
         }
-        send_own_mac();
+        sendWwnMac();
     }
 
     while (Serial1.available())
@@ -147,7 +147,7 @@ void acom_tick()
             {
                 Serial1.read();
             }
-            send_own_mac();
+            sendWwnMac();
             delay(50);
         }
 
@@ -161,7 +161,7 @@ void acom_tick()
     }
 }
 
-bool acom_failed()
+bool acomFailed()
 {
     return failed;
 }

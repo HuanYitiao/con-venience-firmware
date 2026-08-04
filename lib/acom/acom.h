@@ -12,9 +12,9 @@
 #define ACOM_PAYLOAD_LEN 7
 #define ACOM_FRAME_LEN 9
 
-void acom_init();
-void acom_start();
-void acom_stop();
-void acom_tick();
-bool acom_failed();
-bool acom_has_mac(uint8_t mac_out[6], uint8_t *type_out);
+void acomInit();
+void acomStart();
+void acomStop();
+void acomTick();
+bool acomFailed();
+bool acomHasMac(uint8_t mac_out[6], uint8_t *type_out);
