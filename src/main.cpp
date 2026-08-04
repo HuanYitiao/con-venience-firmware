@@ -50,7 +50,7 @@ static void startBle()
     for (int i = 0; i < 6; i++)
         ownMac[i] = addr->val[5 - i];
 
-    if (!acom_has_mac(peerMac, &peerType))
+    if (!acomHasMac(peerMac, &peerType))
     {
         Serial0.println("startBle: no peer mac");
         fsmHandleEvent(EVENT_BLE_FAILURE);
@@ -86,7 +86,7 @@ static void dispatchEvent(event_t event)
     {
         if (after == STATE_PAIRING)
         {
-            acom_start();
+            acomStart();
         }
 
         if (after == STATE_BLE_EXCHANGE)
@@ -104,7 +104,7 @@ static void dispatchEvent(event_t event)
 
         if (before == STATE_PAIRING && after != STATE_PAIRING)
         {
-            acom_stop();
+            acomStop();
         }
 
         if (after == STATE_SETTINGS)
@@ -193,7 +193,7 @@ void setup()
     audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
 
     Serial0.println("audio ready");
-    acom_init();
+    acomInit();
 
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
@@ -297,16 +297,16 @@ void loop()
 
     if (fsmGetState() == STATE_PAIRING)
     {
-        acom_tick();
+        acomTick();
 
         uint8_t peerMac[6];
-        if (acom_has_mac(peerMac, nullptr))
+        if (acomHasMac(peerMac, nullptr))
         {
             dispatchEvent(EVENT_ACOM_SUCCESS);
         }
-        else if (acom_failed())
+        else if (acomFailed())
         {
-            acom_start();
+            acomStart();
         }
         else if (millis() - fsmGetStateEnterTime() > PAIRING_TIMEOUT_MS)
         {
