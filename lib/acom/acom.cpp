@@ -15,7 +15,7 @@ static uint8_t       rxBuf[16];
 static int           rxLen = 0;
 static bool          failed = false;
 
-static void getOwnMac(uint8_t mac[6])
+void acomGetOwnMac(uint8_t mac[6])
 {
     const ble_addr_t *addr = NimBLEDevice::getAddress().getBase();
     for (int i = 0; i < 6; i++)
@@ -28,7 +28,7 @@ void acomInit()
 {
     pinMode(PIN_ACOM, OUTPUT_OPEN_DRAIN);
     Serial1.begin(ACOM_BAUD, SERIAL_8N1, PIN_ACOM, PIN_ACOM);
-    getOwnMac(ownMac);
+    acomGetOwnMac(ownMac);
 }
 
 void acomStart()

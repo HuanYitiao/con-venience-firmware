@@ -12,6 +12,8 @@
 #define ACOM_PAYLOAD_LEN 7
 #define ACOM_FRAME_LEN 9
 
+void acomGetOwnMac(uint8_t mac[6]);
+
 void acomInit();
 void acomStart();
 void acomStop();

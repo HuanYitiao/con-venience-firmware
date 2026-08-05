@@ -4,6 +4,78 @@
 #include <SD.h>
 #include <SPI.h>
 
+void storageMacToUuid(const uint8_t mac[6], char out[UUID_LEN])
+{
+    snprintf(out, UUID_LEN, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4],
+             mac[5]);
+}
+
+bool storageUuidValidate(const char *s, char out[UUID_LEN])
+{
+    if (!s)
+    {
+        return false;
+    }
+    for (int i = 0; i < 12; i++)
+    {
+        char c = s[i];
+        bool hex = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+        if (!hex)
+        {
+            return false;
+        }
+        out[i] = (c >= 'a' && c <= 'f') ? (char)(c - 'a' + 'A') : c;
+    }
+    if (s[12] != '\0')
+    {
+        return false;
+    }
+    out[12] = '\0';
+    return true;
+}
+
+bool storageEnsureSelfUuid(const uint8_t mac[6])
+{
+    if (!SD.exists(SELF_JSON))
+    {
+        return false;
+    }
+
+    char wantUuid[UUID_LEN];
+    storageMacToUuid(mac, wantUuid);
+
+    JsonDocument doc;
+    File         selfJson = SD.open(SELF_JSON, FILE_READ);
+    if (!selfJson)
+    {
+        return false;
+    }
+    DeserializationError err = deserializeJson(doc, selfJson);
+    selfJson.close();
+    if (err)
+    {
+        return false;
+    }
+
+    const char *cur = doc["uuid"];
+    if (cur && strcmp(cur, wantUuid) == 0)
+    {
+        return true;
+    }
+
+    doc["uuid"] = wantUuid;
+
+    SD.remove(SELF_JSON);
+    File out = SD.open(SELF_JSON, FILE_WRITE);
+    if (!out)
+    {
+        return false;
+    }
+    serializeJson(doc, out);
+    out.close();
+    return true;
+}
+
 bool storageInit(uint8_t csPin)
 {
     for (int i = 0; i < 3; i++)
@@ -22,18 +94,29 @@ bool storageLoadSelf(Contact &contact)
     {
         return false;
     }
+
     File selfJson = SD.open(SELF_JSON, FILE_READ);
     if (!selfJson)
     {
         return false;
     }
-    JsonDocument doc;
-    deserializeJson(doc, selfJson);
+    JsonDocument         doc;
+    DeserializationError err = deserializeJson(doc, selfJson);
     selfJson.close();
-    strlcpy(contact.uuid, doc["uuid"], UUID_LEN);
-    strlcpy(contact.name, doc["name"], NAME_LEN);
-    strlcpy(contact.species, doc["species"], SPECIES_LEN);
-    strlcpy(contact.from, doc["from"], FROM_LEN);
+    if (err)
+    {
+        return false;
+    }
+
+    strlcpy(contact.uuid, doc["uuid"] | "", UUID_LEN);
+    strlcpy(contact.name, doc["name"] | "", NAME_LEN);
+    strlcpy(contact.species, doc["species"] | "", SPECIES_LEN);
+    strlcpy(contact.from, doc["from"] | "", FROM_LEN);
+    if (contact.name[0] == '\0')
+    {
+        return false;
+    }
+
     contact.linkCount = 0;
     JsonArray links = doc["links"].as<JsonArray>();
     for (JsonObject link : links)
@@ -49,13 +132,28 @@ bool storageLoadSelf(Contact &contact)
     contact.avatarResolution = doc["avatar_res"] | 0;
     contact.avatarMode = (AvatarMode)(doc["avatar_mode"] | 0);
 
+    uint16_t expected = avatarLen(contact.avatarResolution, contact.avatarMode);
+    if (expected == 0 || expected > AVATAR_LEN_MAX)
+    {
+        return false;
+    }
+
     File selfBin = SD.open(SELF_BIN, FILE_READ);
     if (!selfBin)
     {
         return false;
     }
-    selfBin.read(contact.avatar, avatarLen(contact.avatarResolution, contact.avatarMode));
+    if (selfBin.size() != expected)
+    {
+        selfBin.close();
+        return false;
+    }
+    size_t got = selfBin.read(contact.avatar, expected);
     selfBin.close();
+    if (got != expected)
+    {
+        return false;
+    }
     return true;
 }
 
@@ -126,6 +224,11 @@ bool storageLoadContact(int index, Contact &contact)
     }
     if (!file || !file.isDirectory())
     {
+        if (file)
+        {
+            file.close();
+        }
+        dir.close();
         return false;
     }
 
@@ -133,12 +236,22 @@ bool storageLoadContact(int index, Contact &contact)
     char binPath[PATH_LEN];
     snprintf(jsonPath, sizeof(jsonPath), "%s/%s/profile.json", FRIENDS_DIR, file.name());
     snprintf(binPath, sizeof(binPath), "%s/%s/avatar.bin", FRIENDS_DIR, file.name());
+    file.close();
+    dir.close();
 
-    JsonDocument doc;
-    File         jsonFile = SD.open(jsonPath, FILE_READ);
-    deserializeJson(doc, jsonFile);
+    File jsonFile = SD.open(jsonPath, FILE_READ);
+    if (!jsonFile)
+    {
+        return false;
+    }
+    JsonDocument         doc;
+    DeserializationError err = deserializeJson(doc, jsonFile);
     jsonFile.close();
-    strlcpy(contact.name, doc["name"], NAME_LEN);
+    if (err)
+    {
+        return false;
+    }
+    strlcpy(contact.name, doc["name"] | "", NAME_LEN);
     strlcpy(contact.from, doc["from"] | "", FROM_LEN);
     strlcpy(contact.uuid, doc["uuid"] | "", UUID_LEN);
     strlcpy(contact.species, doc["species"] | "", SPECIES_LEN);
@@ -157,16 +270,24 @@ bool storageLoadContact(int index, Contact &contact)
     contact.avatarResolution = doc["avatar_res"] | 0;
     contact.avatarMode = (AvatarMode)(doc["avatar_mode"] | 0);
 
+    uint16_t expected = avatarLen(contact.avatarResolution, contact.avatarMode);
+    if (expected == 0 || expected > AVATAR_LEN_MAX)
+    {
+        return false;
+    }
+
     File friendBin = SD.open(binPath, FILE_READ);
     if (!friendBin)
     {
         return false;
     }
-    friendBin.read(contact.avatar, avatarLen(contact.avatarResolution, contact.avatarMode));
+    if (friendBin.size() != expected)
+    {
+        friendBin.close();
+        return false;
+    }
+    friendBin.read(contact.avatar, expected);
     friendBin.close();
-
-    file.close();
-    dir.close();
 
     return true;
 }

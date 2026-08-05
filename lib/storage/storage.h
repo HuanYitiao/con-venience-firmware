@@ -6,7 +6,6 @@
 /*
 self_profile.json example:
 {
-  "uuid": "A3F9",
   "name": "Wolfram",
   "species": "Samoyed",
   "from": "Sichuan, China",
@@ -17,6 +16,7 @@ self_profile.json example:
   "avatar_res": 64,
   "avatar_mode": 0
 }
+uuid is not authored here; the firmware stamps it as the device BLE MAC on load.
 */
 
 #define SELF_JSON "/self_profile/profile.json"
@@ -25,7 +25,7 @@ self_profile.json example:
 
 #define PATH_LEN 96
 
-#define UUID_LEN 11
+#define UUID_LEN 13
 #define NAME_LEN 32
 #define SPECIES_LEN 64
 #define FROM_LEN 64
@@ -71,3 +71,7 @@ bool storageSaveContact(const Contact &contact);
 bool storageLoadContact(int index, Contact &contact);
 int  storageCountContacts();
 bool storageLoadContactName(int index, char *username, int maxLen);
+
+void storageMacToUuid(const uint8_t mac[6], char out[UUID_LEN]);
+bool storageUuidValidate(const char *s, char out[UUID_LEN]);
+bool storageEnsureSelfUuid(const uint8_t mac[6]);

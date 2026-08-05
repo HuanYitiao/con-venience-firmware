@@ -22,6 +22,7 @@ static Contact currentContact = {};
 static char    contactNames[16][NAME_LEN] = {};
 static int     contactCount = 0;
 static bool    idleShowQR = false;
+static bool    needProvision = false;
 
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
@@ -163,9 +164,12 @@ void setup()
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(200);
     storageInit();
-    storageLoadSelf(self);
-    Serial0.printf("self: name=%s res=%d links=%d\n", self.name, self.avatarResolution,
-                   self.linkCount);
+    uint8_t selfMac[6];
+    acomGetOwnMac(selfMac);
+    storageEnsureSelfUuid(selfMac);
+    needProvision = !storageLoadSelf(self);
+    Serial0.printf("self: name=%s res=%d links=%d provision=%d\n", self.name, self.avatarResolution,
+                   self.linkCount, needProvision);
     contactCount = storageCountContacts();
     Serial0.printf("contactCount: %d\n", contactCount);
     for (int i = 0; i < contactCount; i++)
@@ -201,6 +205,16 @@ void setup()
 
 void loop()
 {
+    static bool provisionChecked = false;
+    if (!provisionChecked)
+    {
+        provisionChecked = true;
+        if (needProvision)
+        {
+            dispatchEvent(EVENT_ENTER_SETTINGS);
+        }
+    }
+
     btn_events_t btnEvents = btnPoll();
 
     event_t event;
@@ -280,7 +294,8 @@ void loop()
         bleResultReady = false;
         if (bleResultSuccess)
         {
-            bool ok = packingUnpack(bleRxBuf, bleRxLen);
+            uint8_t peerMac[6];
+            bool    ok = acomHasMac(peerMac, nullptr) && packingUnpack(bleRxBuf, bleRxLen, peerMac);
             Serial0.printf("unpack: %s\n", ok ? "OK" : "FAIL");
             if (ok)
             {
