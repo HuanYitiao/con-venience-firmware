@@ -86,6 +86,8 @@ const char *eventName(event_t e)
             return "ACOM_SUCCESS";
         case EVENT_ACOM_FAILURE:
             return "ACOM_FAILURE";
+        case EVENT_ENTER_SETTINGS:
+            return "ENTER_SETTINGS";
         case EVENT_BATTERY_LOW:
             return "BATTERY_LOW";
         case EVENT_OVERTIME_SHUTDOWN:
@@ -145,6 +147,10 @@ void fsmHandleEvent(event_t event)
                     break;
                 case EVENT_RIGHT_CLICK:
                     currentState = STATE_MENU;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_ENTER_SETTINGS:
+                    currentState = STATE_SETTINGS;
                     stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:

@@ -47,9 +47,9 @@ size_t packingPack(uint8_t *out, size_t outLen)
     return totalLen;
 }
 
-bool packingUnpack(const uint8_t *data, size_t len)
+bool packingUnpack(const uint8_t *data, size_t len, const uint8_t acomMac[6])
 {
-    if (len < 4)
+    if (len < 4 || !acomMac)
     {
         return false;
     }
@@ -67,14 +67,23 @@ bool packingUnpack(const uint8_t *data, size_t len)
     if (err)
         return false;
 
-    const char *uuid = doc["uuid"];
-    if (!uuid)
+    // peer uuid is untrusted; require an exact 12-hex-char MAC before it touches a path
+    char safeUuid[UUID_LEN];
+    if (!storageUuidValidate(doc["uuid"], safeUuid))
+    {
+        return false;
+    }
+
+    // and it must be the MAC we just exchanged over ACOM, not an arbitrary spoofed identity
+    char acomUuid[UUID_LEN];
+    storageMacToUuid(acomMac, acomUuid);
+    if (strcmp(safeUuid, acomUuid) != 0)
     {
         return false;
     }
 
     char dirPath[PATH_LEN];
-    snprintf(dirPath, sizeof(dirPath), "%s/%s", FRIENDS_DIR, uuid);
+    snprintf(dirPath, sizeof(dirPath), "%s/%s", FRIENDS_DIR, safeUuid);
     SD.mkdir(dirPath);
 
     char jsonPath[PATH_LEN];
