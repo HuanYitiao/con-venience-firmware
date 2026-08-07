@@ -125,7 +125,8 @@ bool storageLoadSelf(Contact &contact)
         {
             break;
         }
-        strlcpy(contact.links[contact.linkCount].tag, link["tag"] | "", TAG_LEN);
+        strlcpy(contact.links[contact.linkCount].platform, link["platform"] | (link["tag"] | ""),
+                PLATFORM_LEN);
         strlcpy(contact.links[contact.linkCount].url, link["url"] | "", URL_LEN);
         contact.linkCount++;
     }
@@ -185,7 +186,7 @@ bool storageSaveContact(const Contact &contact)
     for (int i = 0; i < contact.linkCount; i++)
     {
         JsonObject link = links.add<JsonObject>();
-        link["tag"] = contact.links[i].tag;
+        link["platform"] = contact.links[i].platform;
         link["url"] = contact.links[i].url;
     }
     serializeJson(doc, friendJson);
@@ -263,7 +264,8 @@ bool storageLoadContact(int index, Contact &contact)
         {
             break;
         }
-        strlcpy(contact.links[contact.linkCount].tag, link["tag"] | "", TAG_LEN);
+        strlcpy(contact.links[contact.linkCount].platform, link["platform"] | (link["tag"] | ""),
+                PLATFORM_LEN);
         strlcpy(contact.links[contact.linkCount].url, link["url"] | "", URL_LEN);
         contact.linkCount++;
     }

@@ -10,8 +10,8 @@ self_profile.json example:
   "species": "Samoyed",
   "from": "Sichuan, China",
   "links": [
-    { "tag": "telegram", "url": "t.me/WolframLiu" },
-    { "tag": "github",   "url": "github.com/HuanYitiao" }
+    { "platform": "telegram", "url": "https://t.me/WolframLiu" },
+    { "platform": "x",        "url": "https://x.com/WolframLiu" }
   ],
   "avatar_res": 64,
   "avatar_mode": 0
@@ -29,7 +29,7 @@ uuid is not authored here; the firmware stamps it as the device BLE MAC on load.
 #define NAME_LEN 32
 #define SPECIES_LEN 64
 #define FROM_LEN 64
-#define TAG_LEN 16
+#define PLATFORM_LEN 16
 #define URL_LEN 128
 #define LINKS_MAX 5
 #define AVATAR_LEN_MAX 4096
@@ -42,7 +42,7 @@ typedef enum : uint8_t
 
 typedef struct
 {
-    char tag[TAG_LEN];
+    char platform[PLATFORM_LEN];
     char url[URL_LEN];
 } Link;
 
