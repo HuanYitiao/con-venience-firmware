@@ -664,7 +664,7 @@ void drawProfileLinks(const Contact &contact, int linkIndex)
         if (selected)
             canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, lineH);
 
-        canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[i].tag, 0, y, DISPLAY_WIDTH, lineH,
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[i].platform, 0, y, DISPLAY_WIDTH, lineH,
                        u8g2_font_6x10_tf, 4, 2, nullptr, selected ? INV : NOR);
     }
 
