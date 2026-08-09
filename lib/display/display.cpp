@@ -591,16 +591,30 @@ void drawSettings()
     }
     else
     {
-        u8g2.setFont(u8g2_font_7x13B_tf);
-        int w1 = u8g2.getUTF8Width("Saved");
-        u8g2.setFont(u8g2_font_6x10_tf);
-        int w2 = u8g2.getUTF8Width("Reboot to apply");
+        const char *sid = wifiConfigSelfId();
+        const char *note = "ID (recovery coming soon)";
+        const char *reb = "Reboot to apply";
 
         canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
-        canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Saved", (DISPLAY_WIDTH - w1) / 2, 40,
-                       DISPLAY_WIDTH, 18, u8g2_font_7x13B_tf, 0, 0, nullptr);
-        canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Reboot to apply", (DISPLAY_WIDTH - w2) / 2, 60,
-                       DISPLAY_WIDTH, 16, u8g2_font_6x10_tf, 0, 0, nullptr);
+
+        u8g2.setFont(u8g2_font_7x13B_tf);
+        int wSaved = u8g2.getUTF8Width("Saved");
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Saved", (DISPLAY_WIDTH - wSaved) / 2, 8,
+                       DISPLAY_WIDTH, 16, u8g2_font_7x13B_tf, 0, 0, nullptr);
+
+        u8g2.setFont(u8g2_font_6x10_tf);
+        int wId = u8g2.getUTF8Width(sid);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, sid, (DISPLAY_WIDTH - wId) / 2, 34, DISPLAY_WIDTH,
+                       12, u8g2_font_6x10_tf, 0, 0, nullptr);
+
+        int wNote = u8g2.getUTF8Width(note);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, note, (DISPLAY_WIDTH - wNote) / 2, 50,
+                       DISPLAY_WIDTH, 12, u8g2_font_6x10_tf, 0, 0, nullptr);
+
+        int wReb = u8g2.getUTF8Width(reb);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, reb, (DISPLAY_WIDTH - wReb) / 2, 72,
+                       DISPLAY_WIDTH, 12, u8g2_font_6x10_tf, 0, 0, nullptr);
+
         draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
     }
 }
@@ -664,8 +678,8 @@ void drawProfileLinks(const Contact &contact, int linkIndex)
         if (selected)
             canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, lineH);
 
-        canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[i].platform, 0, y, DISPLAY_WIDTH, lineH,
-                       u8g2_font_6x10_tf, 4, 2, nullptr, selected ? INV : NOR);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.links[i].platform, 0, y, DISPLAY_WIDTH,
+                       lineH, u8g2_font_6x10_tf, 4, 2, nullptr, selected ? INV : NOR);
     }
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
