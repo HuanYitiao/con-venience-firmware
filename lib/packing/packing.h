@@ -8,4 +8,4 @@
 #define PACKING_BUF_MAX 5000
 
 size_t packingPack(uint8_t *out, size_t outLen);
-bool   packingUnpack(const uint8_t *data, size_t len, const uint8_t acomMac[6]);
+bool   packingUnpack(const uint8_t *data, size_t len);

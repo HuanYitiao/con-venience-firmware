@@ -16,16 +16,17 @@ self_profile.json example:
   "avatar_res": 64,
   "avatar_mode": 0
 }
-uuid is not authored here; the firmware stamps it as the device BLE MAC on load.
+uuid is not authored here; the firmware generates a random 16-hex id on first save.
 */
 
+#define SELF_DIR "/self_profile"
 #define SELF_JSON "/self_profile/profile.json"
 #define SELF_BIN "/self_profile/avatar.bin"
 #define FRIENDS_DIR "/friends_profiles"
 
 #define PATH_LEN 96
 
-#define UUID_LEN 13
+#define UUID_LEN 17
 #define NAME_LEN 32
 #define SPECIES_LEN 64
 #define FROM_LEN 64
@@ -72,6 +73,7 @@ bool storageLoadContact(int index, Contact &contact);
 int  storageCountContacts();
 bool storageLoadContactName(int index, char *username, int maxLen);
 
-void storageMacToUuid(const uint8_t mac[6], char out[UUID_LEN]);
 bool storageUuidValidate(const char *s, char out[UUID_LEN]);
-bool storageEnsureSelfUuid(const uint8_t mac[6]);
+bool storageReadSelfId(char out[UUID_LEN]);
+bool storageEnsureSelfId(char outId[UUID_LEN], const char *preferId = nullptr);
+void storageEnsureParentDir(const char *path);

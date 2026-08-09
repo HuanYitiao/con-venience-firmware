@@ -3,12 +3,7 @@
 #include <ArduinoJson.h>
 #include <SD.h>
 #include <SPI.h>
-
-void storageMacToUuid(const uint8_t mac[6], char out[UUID_LEN])
-{
-    snprintf(out, UUID_LEN, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4],
-             mac[5]);
-}
+#include <esp_random.h>
 
 bool storageUuidValidate(const char *s, char out[UUID_LEN])
 {
@@ -16,7 +11,7 @@ bool storageUuidValidate(const char *s, char out[UUID_LEN])
     {
         return false;
     }
-    for (int i = 0; i < 12; i++)
+    for (int i = 0; i < 16; i++)
     {
         char c = s[i];
         bool hex = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
@@ -26,23 +21,58 @@ bool storageUuidValidate(const char *s, char out[UUID_LEN])
         }
         out[i] = (c >= 'a' && c <= 'f') ? (char)(c - 'a' + 'A') : c;
     }
-    if (s[12] != '\0')
+    if (s[16] != '\0')
     {
         return false;
     }
-    out[12] = '\0';
+    out[16] = '\0';
     return true;
 }
 
-bool storageEnsureSelfUuid(const uint8_t mac[6])
+bool storageReadSelfId(char out[UUID_LEN])
 {
+    if (out)
+    {
+        out[0] = '\0';
+    }
     if (!SD.exists(SELF_JSON))
     {
         return false;
     }
+    File selfJson = SD.open(SELF_JSON, FILE_READ);
+    if (!selfJson)
+    {
+        return false;
+    }
+    JsonDocument         doc;
+    DeserializationError err = deserializeJson(doc, selfJson);
+    selfJson.close();
+    if (err)
+    {
+        return false;
+    }
+    char id[UUID_LEN];
+    if (!storageUuidValidate(doc["uuid"], id))
+    {
+        return false;
+    }
+    if (out)
+    {
+        strlcpy(out, id, UUID_LEN);
+    }
+    return true;
+}
 
-    char wantUuid[UUID_LEN];
-    storageMacToUuid(mac, wantUuid);
+bool storageEnsureSelfId(char outId[UUID_LEN], const char *preferId)
+{
+    if (outId)
+    {
+        outId[0] = '\0';
+    }
+    if (!SD.exists(SELF_JSON))
+    {
+        return false;
+    }
 
     JsonDocument doc;
     File         selfJson = SD.open(SELF_JSON, FILE_READ);
@@ -57,35 +87,67 @@ bool storageEnsureSelfUuid(const uint8_t mac[6])
         return false;
     }
 
+    char id[UUID_LEN];
+    bool haveId = false;
+
+    if (storageUuidValidate(preferId, id))
+    {
+        haveId = true;
+    }
+    if (!haveId && storageUuidValidate(doc["uuid"], id))
+    {
+        haveId = true;
+    }
+    if (!haveId)
+    {
+        uint8_t r[8];
+        esp_fill_random(r, sizeof(r));
+        snprintf(id, UUID_LEN, "%02X%02X%02X%02X%02X%02X%02X%02X", r[0], r[1], r[2], r[3], r[4],
+                 r[5], r[6], r[7]);
+    }
+
     const char *cur = doc["uuid"];
-    if (cur && strcmp(cur, wantUuid) == 0)
+    if (!cur || strcmp(cur, id) != 0)
     {
-        return true;
+        doc["uuid"] = id;
+        SD.remove(SELF_JSON);
+        File out = SD.open(SELF_JSON, FILE_WRITE);
+        if (!out)
+        {
+            return false;
+        }
+        serializeJson(doc, out);
+        out.close();
     }
 
-    doc["uuid"] = wantUuid;
-
-    SD.remove(SELF_JSON);
-    File out = SD.open(SELF_JSON, FILE_WRITE);
-    if (!out)
+    if (outId)
     {
-        return false;
+        strlcpy(outId, id, UUID_LEN);
     }
-    serializeJson(doc, out);
-    out.close();
     return true;
 }
 
 bool storageInit(uint8_t csPin)
 {
+    bool mounted = false;
     for (int i = 0; i < 3; i++)
     {
         if (SD.begin(csPin, SPI, 4000000))
-            return true;
+        {
+            mounted = true;
+            break;
+        }
         delay(500);
     }
-    Serial0.println("SD init failed");
-    return false;
+    if (!mounted)
+    {
+        Serial0.println("SD init failed");
+        return false;
+    }
+
+    SD.mkdir(SELF_DIR);
+    SD.mkdir(FRIENDS_DIR);
+    return true;
 }
 
 bool storageLoadSelf(Contact &contact)
@@ -357,4 +419,25 @@ bool storageLoadContactName(int index, char *username, int maxLen)
     }
     dir.close();
     return false;
+}
+
+void storageEnsureParentDir(const char *path)
+{
+    char dir[PATH_LEN];
+    if (strlcpy(dir, path, sizeof(dir)) >= sizeof(dir))
+    {
+        return;
+    }
+    for (char *p = dir + 1; *p; ++p)
+    {
+        if (*p == '/')
+        {
+            *p = '\0';
+            if (!SD.exists(dir))
+            {
+                SD.mkdir(dir);
+            }
+            *p = '/';
+        }
+    }
 }

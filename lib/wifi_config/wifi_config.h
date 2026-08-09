@@ -13,3 +13,4 @@ uint32_t wifiConfigIdleMs();
 const char *wifiConfigWifiQr();
 const char *wifiConfigUrl();
 const char *wifiConfigSsid();
+const char *wifiConfigSelfId();

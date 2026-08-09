@@ -8,7 +8,7 @@
 #include <esp_random.h>
 
 #include "pins.h"
-#include "storage.h"  // SELF_JSON, SELF_BIN — self profile paths in /self_profile/
+#include "storage.h"  // SELF_JSON, SELF_BIN, storageEnsureSelfId, storageEnsureParentDir
 
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_MASK(255, 255, 255, 0);
@@ -40,6 +40,8 @@ static char s_ssid[24];
 static char s_pass[20];
 static char s_wifiQr[80];
 static char s_url[24];
+static char s_selfId[UUID_LEN] = {0};
+static char s_prevId[UUID_LEN] = {0};
 
 static void touch()
 {
@@ -67,27 +69,6 @@ static void genPassword()
 static void buildWifiQr()
 {
     snprintf(s_wifiQr, sizeof(s_wifiQr), "WIFI:T:WPA;S:%s;P:%s;;", s_ssid, s_pass);
-}
-
-static void ensureParentDir(const char *path)
-{
-    char dir[64];
-    if (strlcpy(dir, path, sizeof(dir)) >= sizeof(dir))
-    {
-        return;
-    }
-    for (char *p = dir + 1; *p; ++p)
-    {
-        if (*p == '/')
-        {
-            *p = '\0';
-            if (!SD.exists(dir))
-            {
-                SD.mkdir(dir);
-            }
-            *p = '/';
-        }
-    }
 }
 
 static bool serveSd(const char *path, const char *type)
@@ -149,7 +130,8 @@ static void handleCaptive()
 // SELF_JSON, "avatar" -> SELF_BIN. Any other field name is ignored. A part
 // counts as received only if it opened, wrote in full within its size bound,
 // and (for the avatar) is exactly AVATAR_BYTES; otherwise the partial file is
-// dropped and the done-state does not advance.
+// dropped and the done-state does not advance. When both parts are in, a random
+// self id is generated (or the existing one kept) and captured for display.
 static void handleUploadBody()
 {
     HTTPUpload &up = s_server.upload();
@@ -186,7 +168,11 @@ static void handleUploadBody()
                 s_gotJson = false;
             }
             s_done = false;
-            ensureParentDir(path);
+            if (!s_upAvatar)
+            {
+                storageReadSelfId(s_prevId);
+            }
+            storageEnsureParentDir(path);
             SD.remove(path);
             s_upload = SD.open(path, FILE_WRITE);
             s_upOk = (bool)s_upload;
@@ -242,6 +228,10 @@ static void handleUploadBody()
         }
 
         s_done = s_gotJson && s_gotBin;
+        if (s_done)
+        {
+            storageEnsureSelfId(s_selfId, s_prevId);
+        }
     }
 }
 
@@ -272,6 +262,8 @@ void wifiConfigStart()
     s_done = false;
     s_gotJson = false;
     s_gotBin = false;
+    s_selfId[0] = '\0';
+    s_prevId[0] = '\0';
 
     s_eventId = WiFi.onEvent(onWifiEvent);
     WiFi.mode(WIFI_AP);
@@ -361,4 +353,8 @@ const char *wifiConfigUrl()
 const char *wifiConfigSsid()
 {
     return s_ssid;
+}
+const char *wifiConfigSelfId()
+{
+    return s_selfId;
 }

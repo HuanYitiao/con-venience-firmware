@@ -19,10 +19,11 @@
 
 static Contact self = {};
 static Contact currentContact = {};
-static char    contactNames[16][NAME_LEN] = {};
-static int     contactCount = 0;
-static bool    idleShowQR = false;
-static bool    needProvision = false;
+#define CONTACTS_MAX 64
+static char contactNames[CONTACTS_MAX][NAME_LEN] = {};
+static int  contactCount = 0;
+static bool idleShowQR = false;
+static bool needProvision = false;
 
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
@@ -162,15 +163,14 @@ void setup()
     NimBLEDevice::setMTU(517);
     fsmInit();
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
-    delay(200);
+    delay(10);
     storageInit();
-    uint8_t selfMac[6];
-    acomGetOwnMac(selfMac);
-    storageEnsureSelfUuid(selfMac);
+    char selfId[UUID_LEN];
+    storageEnsureSelfId(selfId);
     needProvision = !storageLoadSelf(self);
-    Serial0.printf("self: name=%s res=%d links=%d provision=%d\n", self.name, self.avatarResolution,
-                   self.linkCount, needProvision);
-    contactCount = storageCountContacts();
+    Serial0.printf("self: name=%s res=%d links=%d id=%s provision=%d\n", self.name,
+                   self.avatarResolution, self.linkCount, self.uuid, needProvision);
+    contactCount = min(storageCountContacts(), CONTACTS_MAX);
     Serial0.printf("contactCount: %d\n", contactCount);
     for (int i = 0; i < contactCount; i++)
     {
@@ -294,13 +294,15 @@ void loop()
         bleResultReady = false;
         if (bleResultSuccess)
         {
-            uint8_t peerMac[6];
-            bool    ok = acomHasMac(peerMac, nullptr) && packingUnpack(bleRxBuf, bleRxLen, peerMac);
+            bool ok = packingUnpack(bleRxBuf, bleRxLen);
             Serial0.printf("unpack: %s\n", ok ? "OK" : "FAIL");
             if (ok)
             {
-                contactCount = storageCountContacts();
-                storageLoadContactName(contactCount - 1, contactNames[contactCount - 1], NAME_LEN);
+                contactCount = min(storageCountContacts(), CONTACTS_MAX);
+                for (int i = 0; i < contactCount; i++)
+                {
+                    storageLoadContactName(i, contactNames[i], NAME_LEN);
+                }
             }
             fsmHandleEvent(EVENT_BLE_SUCCESS);
         }
