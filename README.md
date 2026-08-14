@@ -11,16 +11,16 @@ Designed for fursuiters — two wearers touch devices to exchange contact inform
 ## Hardware
 
 - ESP32-C6-DevKitC-1
-- JLX256128G-921/931 ST75256 4 grey screen 
+- JLX256128G-931 ST75256 4 grey screen 
 - MicroSD card storage 
-- MCP23008 GPIO expander
+- MCP23017 GPIO expander
 - MMAX 98357A audio driver
 
 ## Status
 
 - Firmware for prototype done
+- Safety features for communication
 - Power trails design
-- Upgrade to MCP23017 discussion
 - RTC related functions
 
 ## Build
