@@ -15,6 +15,7 @@
 #include "packing.h"
 #include "pins.h"
 #include "storage.h"
+#include "timebase.h"
 #include "wifi_config.h"
 
 static Contact self = {};
@@ -24,6 +25,11 @@ static char contactNames[CONTACTS_MAX][NAME_LEN] = {};
 static int  contactCount = 0;
 static bool idleShowQR = false;
 static bool needProvision = false;
+
+// [timebase] wall-clock trust flag (degrade-and-continue).
+// false when the crystal failed to start / mux not switched -- device runs
+// normally but any wall-clock read should be treated as unreliable.
+static bool timeValid = false;
 
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
@@ -161,6 +167,33 @@ void setup()
     Serial0.begin(115200);
     NimBLEDevice::init("con-venience");
     NimBLEDevice::setMTU(517);
+
+    // [timebase] bring up the external-crystal wall clock early.
+    // Only touches the RTC clock tree -- no dependency on SPI/storage/display/
+    // Wire, so it goes before them. Placed after NimBLE init so the RF
+    // subsystem is up (same rationale as esp_fill_random).
+    // Degrade-and-continue: on failure we log + leave timeValid=false, the
+    // device keeps running (BLE/display/pairing don't need the wall clock yet).
+    // epoch0 = 2026-01-01 00:00:00 UTC placeholder; later overwritten by
+    // WiFi provisioning / phone time-sync.
+    {
+        timebase_config_t tbCfg = {.epoch0_us = (int64_t)1767225600 * 1000000LL};
+        timebase_status_t tbSt = timebaseInit(&tbCfg);
+        timeValid = (tbSt == TIMEBASE_OK);
+        if (!timeValid)
+        {
+            Serial0.printf(
+                "[timebase] init not OK (status=%d) -- wall clock UNRELIABLE, "
+                "continuing anyway\n",
+                (int)tbSt);
+        }
+        else
+        {
+            Serial0.printf("[timebase] wall clock ready, now = %lld (epoch s)\n",
+                           (long long)timebaseWallNowS());
+        }
+    }
+
     fsmInit();
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(10);
