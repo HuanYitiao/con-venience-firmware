@@ -13,9 +13,9 @@
 #include "io_expander.h"
 #include "led.h"
 #include "packing.h"
+#include "pcf85063a.h"
 #include "pins.h"
 #include "storage.h"
-#include "timebase.h"
 #include "wifi_config.h"
 
 static Contact self = {};
@@ -26,10 +26,8 @@ static int  contactCount = 0;
 static bool idleShowQR = false;
 static bool needProvision = false;
 
-// [timebase] wall-clock trust flag (degrade-and-continue).
-// false when the crystal failed to start / mux not switched -- device runs
-// normally but any wall-clock read should be treated as unreliable.
-static bool timeValid = false;
+static Pcf85063a rtc(Wire, 0x51);
+static bool      timeValid = false;
 
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
@@ -168,32 +166,6 @@ void setup()
     NimBLEDevice::init("con-venience");
     NimBLEDevice::setMTU(517);
 
-    // [timebase] bring up the external-crystal wall clock early.
-    // Only touches the RTC clock tree -- no dependency on SPI/storage/display/
-    // Wire, so it goes before them. Placed after NimBLE init so the RF
-    // subsystem is up (same rationale as esp_fill_random).
-    // Degrade-and-continue: on failure we log + leave timeValid=false, the
-    // device keeps running (BLE/display/pairing don't need the wall clock yet).
-    // epoch0 = 2026-01-01 00:00:00 UTC placeholder; later overwritten by
-    // WiFi provisioning / phone time-sync.
-    {
-        timebase_config_t tbCfg = {.epoch0_us = (int64_t)1767225600 * 1000000LL};
-        timebase_status_t tbSt = timebaseInit(&tbCfg);
-        timeValid = (tbSt == TIMEBASE_OK);
-        if (!timeValid)
-        {
-            Serial0.printf(
-                "[timebase] init not OK (status=%d) -- wall clock UNRELIABLE, "
-                "continuing anyway\n",
-                (int)tbSt);
-        }
-        else
-        {
-            Serial0.printf("[timebase] wall clock ready, now = %lld (epoch s)\n",
-                           (long long)timebaseWallNowS());
-        }
-    }
-
     fsmInit();
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(10);
@@ -217,6 +189,34 @@ void setup()
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
     ioexpInit();
     btnInit();
+
+    // [pcf85063a] authoritative wall clock. Must come after Wire.begin()
+    // since it is an I2C device. Minimal bring-up: prove presence and read
+    // the current time once. Real time is NOT set here -- provisioning /
+    // phone time-sync will do that later. Degrade-and-continue: on failure
+    // we log + leave timeValid=false, the device keeps running (BLE/display/
+    // pairing don't need the wall clock yet).
+    {
+        if (rtc.begin() == PCF_OK)
+        {
+            pcf_time_t t;
+            bool       oscStopped = false;
+            if (rtc.getTime(t, oscStopped) == PCF_OK)
+            {
+                timeValid = true;
+                Serial0.printf("[rtc] present, now = %02u:%02u:%02u  OS=%s\n", t.hours, t.minutes,
+                               t.seconds, oscStopped ? "YES(stopped)" : "no");
+            }
+            else
+            {
+                Serial0.println("[rtc] present but read failed -- time UNRELIABLE");
+            }
+        }
+        else
+        {
+            Serial0.println("[rtc] not found -- wall clock UNRELIABLE, continuing anyway");
+        }
+    }
 
     audio_init();
     audio_setWaveform(AUDIO_WAVE_SQUARE);
