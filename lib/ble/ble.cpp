@@ -14,6 +14,7 @@
 #define PROFILE_LEN_MAX 4608
 #define CHUNK_SIZE 240
 #define REQ_MAGIC 0xBB
+#define HDR_MAGIC 0xAA
 
 static ble_callback_t        s_callback = nullptr;
 static bool                  s_busy = false;
@@ -26,6 +27,23 @@ static size_t                s_tx_len = 0;
 static NimBLECharacteristic *s_rxChar = nullptr;
 static volatile uint16_t     s_req_chunk = 0;
 
+// Write-channel framing on RX_CHAR, disambiguated by (length, first byte):
+//   len == 3, byte0 == REQ_MAGIC : chunk request  [REQ_MAGIC][idx_hi][idx_lo]
+//   len == 3, byte0 == HDR_MAGIC : size header     [HDR_MAGIC][len_hi][len_lo]
+//   len >= 4                     : profile chunk   [idx_hi][idx_lo][tot_hi][tot_lo][data]
+// A profile chunk is always >= 4 bytes, so a 3-byte write is never a chunk;
+// REQ and HDR never collide because their magic bytes differ.
+
+// --- progress snapshot: single writer per role (client task OR server
+// --- callbacks; only one is active on a given device), plain volatiles ---
+static volatile uint16_t   s_prog_done = 0;
+static volatile uint16_t   s_prog_total = 0;
+static volatile ble_prog_t s_prog_state = BLE_PROG_CONNECTING;
+
+static volatile uint16_t s_srv_tx_total = 0;   // server: own profile chunks (phase 1)
+static volatile uint16_t s_srv_rx_total = 0;   // server: peer profile chunks (from header)
+static volatile uint16_t s_srv_rx_chunks = 0;  // server: phase-2 chunks received
+
 static void bleFinish(bool success)
 {
     NimBLEDevice::stopAdvertising();
@@ -34,9 +52,17 @@ static void bleFinish(bool success)
         s_callback(success, s_rx_buf, s_rx_len);
 }
 
+// Server-side unified progress. Phase-1 delivered is approximated by s_req_chunk
+// (the client is working on that chunk, so that many are already read); phase-2
+// received is s_srv_rx_chunks. Never overshoots (tops out one chunk short).
+static void srvUpdateProgress()
+{
+    s_prog_done = s_req_chunk + s_srv_rx_chunks;
+}
+
 // Callbacks for both characteristics.
 // TX_CHAR (READ): onRead serves the chunk the client requested.
-// RX_CHAR (WRITE): onWrite handles chunk requests and incoming profile data.
+// RX_CHAR (WRITE): onWrite handles size header, chunk requests, profile data.
 class CharCallbacks : public NimBLECharacteristicCallbacks
 {
     void onWrite(NimBLECharacteristic *pChar, NimBLEConnInfo &connInfo) override
@@ -48,6 +74,22 @@ class CharCallbacks : public NimBLECharacteristicCallbacks
         if (rawLen == 3 && raw[0] == REQ_MAGIC)
         {
             s_req_chunk = ((uint16_t)raw[1] << 8) | raw[2];
+            srvUpdateProgress();
+            return;
+        }
+
+        // Size header from client (arrives before phase 1): [HDR_MAGIC][len_hi][len_lo].
+        // Gives the server the peer profile size up front, so it has a complete
+        // denominator (own chunks + peer chunks) for the whole exchange.
+        if (rawLen == 3 && raw[0] == HDR_MAGIC)
+        {
+            uint16_t incomingBytes = ((uint16_t)raw[1] << 8) | raw[2];
+            s_srv_rx_total = (incomingBytes + CHUNK_SIZE - 1) / CHUNK_SIZE;
+            s_prog_total = s_srv_tx_total + s_srv_rx_total;
+            s_prog_state = BLE_PROG_ACTIVE;
+            srvUpdateProgress();
+            Serial0.printf("Server: size header, peer=%u bytes (%u chunks)\n", incomingBytes,
+                           s_srv_rx_total);
             return;
         }
 
@@ -63,6 +105,9 @@ class CharCallbacks : public NimBLECharacteristicCallbacks
 
         memcpy(s_rx_buf + s_rx_len, raw.data() + 4, dataLen);
         s_rx_len += dataLen;
+
+        s_srv_rx_chunks++;
+        srvUpdateProgress();
 
         Serial0.printf("Server: chunk %d/%d received, total so far=%d\n", chunkIndex + 1,
                        totalChunks, s_rx_len);
@@ -153,10 +198,22 @@ static void clientTask(void *)
         return;
     }
 
+    uint16_t txTotal = (s_tx_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
+    // Announce own profile size before phase 1 so the server can build a unified
+    // progress denominator. 3-byte header: [HDR_MAGIC][len_hi][len_lo].
+    {
+        uint8_t hdr[3] = {HDR_MAGIC, (uint8_t)(s_tx_len >> 8), (uint8_t)(s_tx_len & 0xFF)};
+        pRx->writeValue(hdr, 3, true);
+        Serial0.printf("Client: sent size header, %d bytes (%d chunks)\n", (int)s_tx_len, txTotal);
+    }
+
     // --- Receive server's profile: client-driven request/read loop ---
     s_rx_len = 0;
     uint16_t i = 0;
     uint16_t total = 1;
+    uint16_t rxTotal = 0;
+    bool     rxTotalKnown = false;
     int      retries = 0;
     bool     recvOk = true;
 
@@ -203,10 +260,19 @@ static void clientTask(void *)
         }
 
         retries = 0;
+        if (!rxTotalKnown)
+        {
+            rxTotal = total;
+            rxTotalKnown = true;
+            s_prog_total = rxTotal + txTotal;
+            s_prog_done = 0;
+            s_prog_state = BLE_PROG_ACTIVE;
+        }
         memcpy(s_rx_buf + s_rx_len, d + 4, dataLen);
         s_rx_len += dataLen;
-        Serial0.printf("Client: read chunk %d/%d total=%d\n", idx + 1, total, s_rx_len);
         i++;
+        s_prog_done = i;
+        Serial0.printf("Client: read chunk %d/%d total=%d\n", idx + 1, total, s_rx_len);
     }
 
     if (recvOk)
@@ -219,7 +285,6 @@ static void clientTask(void *)
     }
 
     // --- Send own profile to server via write ---
-    uint16_t txTotal = (s_tx_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
     for (uint16_t j = 0; j < txTotal; j++)
     {
         size_t  offset = (size_t)j * CHUNK_SIZE;
@@ -233,6 +298,8 @@ static void clientTask(void *)
         memcpy(pkt + 4, s_tx_buf + offset, len);
 
         pRx->writeValue(pkt, len + 4, true);
+        if (rxTotalKnown)
+            s_prog_done = rxTotal + (j + 1);  // receive done, now sending
         Serial0.printf("Client: chunk %d/%d sent\n", j + 1, txTotal);
     }
 
@@ -245,7 +312,7 @@ static void clientTask(void *)
 void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
               const uint8_t *my_profile, size_t my_profile_len, ble_callback_t callback)
 {
-    Serial0.println(">>> BLE BUILD MARKER v5 (read model) <<<");
+    Serial0.println(">>> BLE BUILD MARKER v6 (read model + size header) <<<");
 
     if (s_busy)
     {
@@ -257,6 +324,12 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
 
     s_rx_len = 0;
     s_req_chunk = 0;
+    s_srv_rx_chunks = 0;
+    s_srv_rx_total = 0;
+    s_srv_tx_total = (my_profile_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    s_prog_done = 0;
+    s_prog_total = 0;
+    s_prog_state = BLE_PROG_CONNECTING;
 
     memcpy(s_peer_mac, peer_mac, 6);
     s_peer_type = peer_type;
@@ -297,4 +370,13 @@ void bleStop()
 bool bleIsBusy()
 {
     return s_busy;
+}
+
+ble_prog_t bleGetProgress(uint16_t *done_chunks, uint16_t *total_chunks)
+{
+    if (done_chunks)
+        *done_chunks = s_prog_done;
+    if (total_chunks)
+        *total_chunks = s_prog_total;
+    return s_prog_state;
 }

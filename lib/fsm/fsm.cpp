@@ -86,6 +86,12 @@ const char *eventName(event_t e)
             return "ACOM_SUCCESS";
         case EVENT_ACOM_FAILURE:
             return "ACOM_FAILURE";
+        case EVENT_BLE_TRANSFER_START:
+            return "BLE_TRANSFER_START";
+        case EVENT_BLE_SUCCESS:
+            return "BLE_SUCCESS";
+        case EVENT_BLE_FAILURE:
+            return "BLE_FAILURE";
         case EVENT_ENTER_SETTINGS:
             return "ENTER_SETTINGS";
         case EVENT_BATTERY_LOW:
@@ -123,8 +129,10 @@ const char *stateName(state_t s)
             return "STANDBY";
         case STATE_LOW_BATTERY:
             return "LOW_BATTERY";
-        case STATE_BLE_EXCHANGE:
-            return "BLE_EXCHANGE";
+        case STATE_BLE_CONNECTING:
+            return "BLE_CONNECTING";
+        case STATE_BLE_TRANSFER:
+            return "BLE_TRANSFER";
         default:
             return "UNKNOWN";
     }
@@ -175,7 +183,7 @@ void fsmHandleEvent(event_t event)
                     stateEnterTime = millis();
                     break;
                 case EVENT_ACOM_SUCCESS:
-                    currentState = STATE_BLE_EXCHANGE;
+                    currentState = STATE_BLE_CONNECTING;
                     stateEnterTime = millis();
                     break;
                 default:
@@ -371,17 +379,40 @@ void fsmHandleEvent(event_t event)
             }
             break;
 
-        case STATE_BLE_EXCHANGE:
+        case STATE_BLE_CONNECTING:
             switch (event)
             {
-                case EVENT_PAIRING_LONG_PRESS:
-                    currentState = prePairingState;
+                case EVENT_BLE_TRANSFER_START:
+                    currentState = STATE_BLE_TRANSFER;
+                    stateEnterTime = millis();
                     break;
+                // A fast/tiny exchange may complete before the main loop ever
+                // observes the transfer sub-state -- accept success here too.
                 case EVENT_BLE_SUCCESS:
                     currentState = STATE_CONTACT_CARD;
+                    stateEnterTime = millis();
                     break;
+                case EVENT_PAIRING_LONG_PRESS:
                 case EVENT_BLE_FAILURE:
                     currentState = prePairingState;
+                    stateEnterTime = millis();
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_BLE_TRANSFER:
+            switch (event)
+            {
+                case EVENT_BLE_SUCCESS:
+                    currentState = STATE_CONTACT_CARD;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_PAIRING_LONG_PRESS:
+                case EVENT_BLE_FAILURE:
+                    currentState = prePairingState;
+                    stateEnterTime = millis();
                     break;
                 default:
                     break;

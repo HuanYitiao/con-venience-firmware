@@ -82,6 +82,11 @@ static void startBle()
     Serial0.println("startBle: bleStart called");
 }
 
+static bool isBleActiveState(state_t s)
+{
+    return s == STATE_BLE_CONNECTING || s == STATE_BLE_TRANSFER;
+}
+
 static void dispatchEvent(event_t event)
 {
     state_t before = fsmGetState();
@@ -95,12 +100,13 @@ static void dispatchEvent(event_t event)
             acomStart();
         }
 
-        if (after == STATE_BLE_EXCHANGE)
+        if (after == STATE_BLE_CONNECTING)
         {
             startBle();
         }
 
-        if (before == STATE_BLE_EXCHANGE && after != STATE_BLE_EXCHANGE)
+        // Leaving the BLE flow entirely (not the CONNECTING->TRANSFER hop) tears it down.
+        if (isBleActiveState(before) && !isBleActiveState(after))
         {
             if (!bleResultReady)
             {
@@ -383,8 +389,34 @@ void loop()
         lastContactIndex = currentIndex;
     }
 
+    int  transferPercent = 0;
+    bool transferIndeterminate = true;
+    {
+        state_t bleState = fsmGetState();
+        if (bleState == STATE_BLE_CONNECTING || bleState == STATE_BLE_TRANSFER)
+        {
+            uint16_t   pdone = 0;
+            uint16_t   ptotal = 0;
+            ble_prog_t ps = bleGetProgress(&pdone, &ptotal);
+
+            if (ps == BLE_PROG_ACTIVE && ptotal > 0)
+            {
+                transferPercent = (int)((uint32_t)pdone * 100 / ptotal);
+                if (transferPercent > 100)
+                    transferPercent = 100;
+                transferIndeterminate = false;
+            }
+
+            // First honest progress reading promotes CONNECTING -> TRANSFER.
+            if (bleState == STATE_BLE_CONNECTING && ps == BLE_PROG_ACTIVE)
+            {
+                dispatchEvent(EVENT_BLE_TRANSFER_START);
+            }
+        }
+    }
+
     const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
-                  fsmGetLinkIndex());
+                  fsmGetLinkIndex(), transferPercent, transferIndeterminate);
 }
