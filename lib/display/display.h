@@ -52,12 +52,14 @@ void displayClearAll();
 void displayResetScroll();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
-                   int menuSelection, bool idleShowQR, const Contact &profileContact,
-                   int linkIndex);
+                   int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
+                   int transferPercent, bool transferIndeterminate);
 void drawHomepage(const Contact &self);
-void drawPairing(const Contact &self);
+void drawWaitContact(const Contact &self);
+void drawConnecting(const Contact &self);
+void drawTransfer(int percent, bool indeterminate);
 void drawContactCard(const Contact &contact);
-void drawMenu();
+void drawMenu(int menuSelection);
 void drawSettings();
 void drawContactList(const char names[][NAME_LEN], int count, int index);
 void drawProfileAvatar(const Contact &contact);

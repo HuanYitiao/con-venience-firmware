@@ -391,6 +391,15 @@ static void canvasDrawHighlight(uint8_t *canvas, int canvasW, int x, int y, int 
     }
 }
 
+// filled rectangle in a gray level (ORs onto existing content, so draw the
+// lighter track before the darker fill)
+static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, int h, uint8_t gray)
+{
+    for (int py = y; py < y + h && py < DISPLAY_HEIGHT; py++)
+        for (int px = x; px < x + w && px < canvasW; px++)
+            canvasSetPixel(canvas, canvasW, px, py, gray);
+}
+
 // ── public API ─────────────────────────────────────────────
 void displayInit()
 {
@@ -493,7 +502,23 @@ void drawHomepage(const Contact &self)
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
-void drawPairing(const Contact &self)
+// STATE_PAIRING: waiting for physical ACOM wrist contact.
+void drawWaitContact(const Contact &self)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, 0, 0, self);
+
+    u8g2.setFont(u8g2_font_8x13B_tf);
+    int w1 = u8g2.getUTF8Width("Touch devices");
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Touch devices", DISPLAY_WIDTH / 2,
+                   DISPLAY_HEIGHT / 2, DISPLAY_UI_WIDTH, 18, u8g2_font_7x13B_tf, 0, 0, nullptr);
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+// STATE_BLE_CONNECTING: physical contact done, BLE link coming up. This is the
+// original ripple animation (kept intact, only renamed from drawPairing).
+void drawConnecting(const Contact &self)
 {
     unsigned long now = millis();
     if (now - lastFrameTime > PAIRING_FRAME_INTERVAL)
@@ -538,6 +563,53 @@ void drawPairing(const Contact &self)
             }
         }
     }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+// STATE_BLE_TRANSFER: profile data moving. percent is an honest running total
+// (receive + send). indeterminate == true means no honest denominator (fallback
+// only); show a bare "Receiving..." with no fake bar.
+void drawTransfer(int percent, bool indeterminate)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    u8g2.setFont(u8g2_font_7x13B_tf);
+    int wLabel = u8g2.getUTF8Width("Receiving");
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Receiving", (DISPLAY_WIDTH - wLabel) / 2, 26,
+                   DISPLAY_WIDTH, 16, u8g2_font_7x13B_tf, 0, 0, nullptr);
+
+    if (indeterminate)
+    {
+        u8g2.setFont(u8g2_font_8x13B_tf);
+        int wDots = u8g2.getUTF8Width("...");
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, "...", (DISPLAY_WIDTH - wDots) / 2, 54,
+                       DISPLAY_WIDTH, 18, u8g2_font_8x13B_tf, 0, 0, nullptr);
+        draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+        return;
+    }
+
+    if (percent < 0)
+        percent = 0;
+    if (percent > 100)
+        percent = 100;
+
+    char pctText[8];
+    snprintf(pctText, sizeof(pctText), "%d%%", percent);
+    u8g2.setFont(u8g2_font_8x13B_tf);
+    int wPct = u8g2.getUTF8Width(pctText);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, pctText, (DISPLAY_WIDTH - wPct) / 2, 48,
+                   DISPLAY_WIDTH, 18, u8g2_font_8x13B_tf, 0, 0, nullptr);
+
+    // progress bar: light-gray track, black fill proportional to percent
+    const int barX = 28;
+    const int barY = 78;
+    const int barW = DISPLAY_WIDTH - 56;
+    const int barH = 12;
+    canvasFillRect(fullCanvas, DISPLAY_WIDTH, barX, barY, barW, barH, DISPLAY_LIGHT_GRAY);
+    int fillW = barW * percent / 100;
+    if (fillW > 0)
+        canvasFillRect(fullCanvas, DISPLAY_WIDTH, barX, barY, fillW, barH, DISPLAY_BLACK);
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
@@ -714,7 +786,8 @@ void drawLowBattery()
 
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
-                   int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex)
+                   int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
+                   int transferPercent, bool transferIndeterminate)
 {
     switch (state)
     {
@@ -725,10 +798,13 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                 drawHomepage(self);
             break;
         case STATE_PAIRING:
-            drawPairing(self);
+            drawWaitContact(self);
             break;
-        case STATE_BLE_EXCHANGE:
-            drawPairing(self);
+        case STATE_BLE_CONNECTING:
+            drawConnecting(self);
+            break;
+        case STATE_BLE_TRANSFER:
+            drawTransfer(transferPercent, transferIndeterminate);
             break;
         case STATE_CONTACT_CARD:
             drawContactCard(currentContact);
