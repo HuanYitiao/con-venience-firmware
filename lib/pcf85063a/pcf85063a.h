@@ -12,9 +12,12 @@ typedef enum
 
 typedef struct
 {
-    uint8_t seconds;
-    uint8_t minutes;
-    uint8_t hours;
+    uint16_t year;     // full year, e.g. 2026 (RTC stores year % 100)
+    uint8_t  month;    // 1..12
+    uint8_t  day;      // 1..31
+    uint8_t  hours;    // 0..23
+    uint8_t  minutes;  // 0..59
+    uint8_t  seconds;  // 0..59
 } pcf_time_t;
 
 class Pcf85063a
@@ -27,6 +30,7 @@ class Pcf85063a
     pcf_status_t getTime(pcf_time_t &t, bool &oscStopped);
     pcf_status_t readRamByte(uint8_t &value);
     pcf_status_t writeRamByte(uint8_t value);
+    pcf_status_t readTrusted(pcf_time_t &t, bool &trusted);
 
    private:
     TwoWire *_bus;

@@ -8,7 +8,8 @@
 #include <esp_random.h>
 
 #include "pins.h"
-#include "storage.h"  // SELF_JSON, SELF_BIN, storageEnsureSelfId, storageEnsureParentDir
+#include "set_time.h"  // settimePage, applySetTime, settime_result_t
+#include "storage.h"   // SELF_JSON, SELF_BIN, storageEnsureSelfId, storageEnsureParentDir
 
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_MASK(255, 255, 255, 0);
@@ -18,9 +19,31 @@ static const char     *WEB_JSZIP = "/web/jszip.min.js";
 static const size_t    AVATAR_BYTES = 4096;       // 128x128 2bpp, fixed full frame
 static const size_t    PROFILE_JSON_MAX = 65536;  // upper bound so one POST cannot fill the SD
 
+// Settings index (embedded in flash, not SD): navigation only, no side effects.
+// Kept embedded so the entry page always works even if the SD is flaky.
+static const char SETTINGS_PAGE[] = R"HTML(<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>con-venience &middot; settings</title>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;
+display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,
+"Segoe UI",Roboto,sans-serif;background:#0f1115;color:#e8eaed}main{width:100%;max-width:22rem;
+padding:2rem 1.5rem}.brand{font-size:.8rem;letter-spacing:.18em;text-transform:uppercase;
+color:#6b7280;text-align:center;margin-bottom:.5rem}h1{font-size:1.6rem;text-align:center;
+margin:0 0 1.75rem}a.item{display:block;width:100%;padding:1.1rem 1.25rem;margin-top:.9rem;
+font-size:1.15rem;font-weight:600;text-decoration:none;color:#e8eaed;background:#1a1d24;
+border:1px solid #2b2f38;border-radius:.75rem}a.item:active{background:#e8eaed;color:#0f1115}
+</style></head>
+<body><main><div class="brand">con-venience</div><h1>Settings</h1>
+<a class="item" href="/profile">Set Profile</a>
+<a class="item" href="/settime">Set Time</a>
+</main></body></html>)HTML";
+
 static WebServer s_server(80);
 static DNSServer s_dns;
 static File      s_upload;
+
+static Pcf85063a *s_rtc = nullptr;  // borrowed; must outlive the server
 
 static bool     s_active = false;
 static bool     s_connected = false;
@@ -83,12 +106,52 @@ static bool serveSd(const char *path, const char *type)
     return true;
 }
 
-static void handleRoot()
+static void handleSettings()
+{
+    touch();
+    s_server.send(200, "text/html", SETTINGS_PAGE);
+}
+
+static void handleProfile()
 {
     touch();
     if (!serveSd(WEB_ROOT, "text/html"))
     {
         s_server.send(500, "text/plain", "profile-generator.html missing on SD");
+    }
+}
+
+static void handleSettimeGet()
+{
+    touch();
+    s_server.send(200, "text/html", settimePage());
+}
+
+static void handleSettimePost()
+{
+    touch();
+
+    if (!s_rtc)
+    {
+        s_server.send(500, "application/json", "{\"ok\":false,\"err\":\"rtc\"}");
+        return;
+    }
+
+    String body = s_server.arg("plain");
+    switch (applySetTime(*s_rtc, body.c_str(), body.length()))
+    {
+        case SETTIME_OK:
+            s_server.send(200, "application/json", "{\"ok\":true}");
+            break;
+        case SETTIME_BAD_JSON:
+            s_server.send(400, "application/json", "{\"ok\":false,\"err\":\"json\"}");
+            break;
+        case SETTIME_BAD_FIELD:
+            s_server.send(400, "application/json", "{\"ok\":false,\"err\":\"field\"}");
+            break;
+        case SETTIME_RTC_FAIL:
+            s_server.send(500, "application/json", "{\"ok\":false,\"err\":\"rtc\"}");
+            break;
     }
 }
 
@@ -250,12 +313,14 @@ static void onWifiEvent(arduino_event_id_t event)
     }
 }
 
-void wifiConfigStart()
+void wifiConfigStart(Pcf85063a &rtc)
 {
     if (s_active)
     {
         return;
     }
+
+    s_rtc = &rtc;
 
     deriveSsidUrl();
     s_connected = false;
@@ -277,7 +342,10 @@ void wifiConfigStart()
     s_dns.setErrorReplyCode(DNSReplyCode::NoError);
     s_dns.start(DNS_PORT, "*", AP_IP);
 
-    s_server.on("/", HTTP_GET, handleRoot);
+    s_server.on("/", HTTP_GET, handleSettings);
+    s_server.on("/profile", HTTP_GET, handleProfile);
+    s_server.on("/settime", HTTP_GET, handleSettimeGet);
+    s_server.on("/settime", HTTP_POST, handleSettimePost);
     s_server.on("/jszip.min.js", HTTP_GET, handleJszip);
     s_server.on("/profile.json", HTTP_GET, handleProfileJson);
     s_server.on("/avatar.bin", HTTP_GET, handleAvatar);

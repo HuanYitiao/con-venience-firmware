@@ -1,16 +1,18 @@
 #pragma once
 
-#include <Arduino.h>
+#include <stdint.h>
 
-void wifiConfigStart();
-void wifiConfigStop();
-void wifiConfigLoop();
+#include "pcf85063a.h"  // 让 Pcf85063a 类型可见
 
-bool     wifiConfigClientConnected();
-bool     wifiConfigUploadDone();
-uint32_t wifiConfigIdleMs();
+void wifiConfigStart(Pcf85063a &rtc);  // <- 带参
+void wifiConfigStop(void);
+void wifiConfigLoop(void);
 
-const char *wifiConfigWifiQr();
-const char *wifiConfigUrl();
-const char *wifiConfigSsid();
-const char *wifiConfigSelfId();
+bool     wifiConfigClientConnected(void);
+bool     wifiConfigUploadDone(void);
+uint32_t wifiConfigIdleMs(void);
+
+const char *wifiConfigWifiQr(void);
+const char *wifiConfigUrl(void);
+const char *wifiConfigSsid(void);
+const char *wifiConfigSelfId(void);

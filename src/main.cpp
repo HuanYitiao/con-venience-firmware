@@ -121,7 +121,7 @@ static void dispatchEvent(event_t event)
 
         if (after == STATE_SETTINGS)
         {
-            wifiConfigStart();
+            wifiConfigStart(rtc);
         }
         if (before == STATE_SETTINGS && after != STATE_SETTINGS)
         {
@@ -196,30 +196,27 @@ void setup()
     ioexpInit();
     btnInit();
 
-    // [pcf85063a] authoritative wall clock. Must come after Wire.begin()
-    // since it is an I2C device. Minimal bring-up: prove presence and read
-    // the current time once. Real time is NOT set here -- provisioning /
-    // phone time-sync will do that later. Degrade-and-continue: on failure
-    // we log + leave timeValid=false, the device keeps running (BLE/display/
-    // pairing don't need the wall clock yet).
     {
         if (rtc.begin() == PCF_OK)
         {
             pcf_time_t t;
-            bool       oscStopped = false;
-            if (rtc.getTime(t, oscStopped) == PCF_OK)
+            bool       trusted = false;
+            if (rtc.readTrusted(t, trusted) == PCF_OK)
             {
-                timeValid = true;
-                Serial0.printf("[rtc] present, now = %02u:%02u:%02u  OS=%s\n", t.hours, t.minutes,
-                               t.seconds, oscStopped ? "YES(stopped)" : "no");
+                timeValid = trusted;
+                Serial0.printf("[rtc] present, now = %04u-%02u-%02u %02u:%02u:%02u  trusted=%s\n",
+                               t.year, t.month, t.day, t.hours, t.minutes, t.seconds,
+                               trusted ? "yes" : "NO(needs sync)");
             }
             else
             {
+                timeValid = false;
                 Serial0.println("[rtc] present but read failed -- time UNRELIABLE");
             }
         }
         else
         {
+            timeValid = false;
             Serial0.println("[rtc] not found -- wall clock UNRELIABLE, continuing anyway");
         }
     }
