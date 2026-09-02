@@ -1,57 +1,16 @@
 #include "audio.h"
 
-#include <Wire.h>
 #include <math.h>
 
 #include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
 #include "pins.h"
-
-#define MCP_ADDR 0x20
-#define MCP_REG_IODIR 0x00
-#define MCP_REG_GPIO 0x09
+#include "power.h"
 
 static const float TWO_PI_F = 6.28318530718f;
 
 static i2s_chan_handle_t txHandle = NULL;
 static audio_waveform_t  currentWave = AUDIO_WAVE_SINE;
-
-static void mcpSetBit(uint8_t ch, bool high)
-{
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_GPIO);
-    Wire.endTransmission(false);
-    Wire.requestFrom(MCP_ADDR, (uint8_t)1);
-    uint8_t val = Wire.read();
-
-    if (high)
-    {
-        val |= (1 << ch);
-    }
-    else
-    {
-        val &= ~(1 << ch);
-    }
-
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_GPIO);
-    Wire.write(val);
-    Wire.endTransmission();
-}
-
-static void mcpSetOutput(uint8_t ch)
-{
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_IODIR);
-    Wire.endTransmission(false);
-    Wire.requestFrom(MCP_ADDR, (uint8_t)1);
-    uint8_t dir = Wire.read();
-    dir &= ~(1 << ch);
-    Wire.beginTransmission(MCP_ADDR);
-    Wire.write(MCP_REG_IODIR);
-    Wire.write(dir);
-    Wire.endTransmission();
-}
 
 static float audioSample(float phase)
 {
@@ -89,15 +48,14 @@ void audio_init(void)
     i2s_channel_init_std_mode(txHandle, &stdCfg);
     i2s_channel_enable(txHandle);
 
-    mcpSetBit(PIN_MCP_AUDIO_SD, false);
-    mcpSetOutput(PIN_MCP_AUDIO_SD);
+    powerSetSpeakerEnable(false);
 }
 
 void audio_deinit(void)
 {
     if (txHandle != NULL)
     {
-        mcpSetBit(PIN_MCP_AUDIO_SD, false);
+        powerSetSpeakerEnable(false);
         i2s_channel_disable(txHandle);
         i2s_del_channel(txHandle);
         txHandle = NULL;
@@ -111,12 +69,12 @@ void audio_setWaveform(audio_waveform_t wave)
 
 void audio_enable(void)
 {
-    mcpSetBit(PIN_MCP_AUDIO_SD, true);
+    powerSetSpeakerEnable(true);
 }
 
 void audio_shutdown(void)
 {
-    mcpSetBit(PIN_MCP_AUDIO_SD, false);
+    powerSetSpeakerEnable(false);
 }
 
 void audio_playTone(uint32_t freqHz, uint32_t durationMs)

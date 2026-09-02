@@ -1,7 +1,9 @@
 #include "display.h"
 
+#include "io_expander.h"
 #include "qrcode.h"
 #include "wifi_config.h"
+
 
 #define PAIRING_FRAME_INTERVAL 200
 
@@ -16,7 +18,7 @@ static U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2(U8G2_R0,
                                                /* data=*/PIN_SPI_MOSI,
                                                /* cs=*/PIN_DISPLAY_CS,
                                                /* dc=*/PIN_DISPLAY_DC,
-                                               /* reset=*/PIN_DISPLAY_RST);
+                                               /* reset=*/U8X8_PIN_NONE);
 
 static uint8_t       pairingFrame = 0;
 static unsigned long lastFrameTime = 0;
@@ -400,21 +402,35 @@ static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, in
             canvasSetPixel(canvas, canvasW, px, py, gray);
 }
 
+// LCD reset moved to MCP23017 GPA3; drive via expander (RMW preserves other Port A bits).
+static void displayReset()
+{
+    uint8_t iodir = ioexpReadReg(0x00);
+    iodir &= ~(1 << PIN_MCP_LCD_RST);
+    ioexpWriteReg(0x00, iodir);
+
+    uint8_t olat = ioexpReadReg(0x0A);
+
+    olat &= ~(1 << PIN_MCP_LCD_RST);
+    ioexpWriteReg(0x0A, olat);
+    delay(100);
+
+    olat |= (1 << PIN_MCP_LCD_RST);
+    ioexpWriteReg(0x0A, olat);
+    delay(100);
+}
+
 // ── public API ─────────────────────────────────────────────
 void displayInit()
 {
     u8g2.setDrawColor(1);
 
-    pinMode(PIN_DISPLAY_RST, OUTPUT);
     pinMode(PIN_DISPLAY_CS, OUTPUT);
     pinMode(PIN_DISPLAY_DC, OUTPUT);
 
     digitalWrite(PIN_DISPLAY_CS, HIGH);
 
-    digitalWrite(PIN_DISPLAY_RST, LOW);
-    delay(100);
-    digitalWrite(PIN_DISPLAY_RST, HIGH);
-    delay(100);
+    displayReset();
 
     sendCommand(0x30);
     sendCommand(0x94);

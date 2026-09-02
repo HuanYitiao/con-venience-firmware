@@ -1,8 +1,10 @@
 #include "acom.h"
 
 #include <NimBLEDevice.h>
+#include <soc/gpio_struct.h>
 
 #include "esp_rom_crc.h"
+
 
 static bool          active = false;
 static unsigned long lastProbeTime = 0;
@@ -26,13 +28,21 @@ void acomGetOwnMac(uint8_t mac[6])
 
 void acomInit()
 {
-    pinMode(PIN_ACOM, OUTPUT_OPEN_DRAIN);
-    Serial1.begin(ACOM_BAUD, SERIAL_8N1, PIN_ACOM, PIN_ACOM);
+    // Pull-up (GPIO5) off by default: avoids back-powering an unpowered peer on contact.
+    pinMode(PIN_ACOM_PU, OUTPUT);
+    digitalWrite(PIN_ACOM_PU, LOW);
+
+    Serial1.begin(ACOM_BAUD, SERIAL_8N1, PIN_ACOM_OD, PIN_ACOM_OD);
+    // Open-drain on the UART pad WITHOUT detaching the peripheral: pinMode() would
+    // re-route the pad to a plain GPIO output (latch=0) and hold the line low.
+    GPIO.pin[PIN_ACOM_OD].pad_driver = 1;
+
     acomGetOwnMac(ownMac);
 }
 
 void acomStart()
 {
+    digitalWrite(PIN_ACOM_PU, HIGH);
     active = true;
     macReceived = false;
     failed = false;
@@ -48,6 +58,7 @@ void acomStart()
 void acomStop()
 {
     active = false;
+    digitalWrite(PIN_ACOM_PU, LOW);
 }
 
 bool acomHasMac(uint8_t mac_out[6], uint8_t *type_out)

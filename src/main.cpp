@@ -15,6 +15,7 @@
 #include "packing.h"
 #include "pcf85063a.h"
 #include "pins.h"
+#include "power.h"
 #include "storage.h"
 #include "wifi_config.h"
 
@@ -173,6 +174,12 @@ void setup()
     NimBLEDevice::setMTU(517);
 
     fsmInit();
+
+    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+    ioexpInit();
+    btnInit();
+    powerInit();
+
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(10);
     storageInit();
@@ -188,37 +195,32 @@ void setup()
         storageLoadContactName(i, contactNames[i], NAME_LEN);
         Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
     }
+
     displayInit();
 
     Serial0.printf("BLE MAC: %s\n", NimBLEDevice::getAddress().toString().c_str());
 
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    ioexpInit();
-    btnInit();
-
+    if (rtc.begin() == PCF_OK)
     {
-        if (rtc.begin() == PCF_OK)
+        pcf_time_t t;
+        bool       trusted = false;
+        if (rtc.readTrusted(t, trusted) == PCF_OK)
         {
-            pcf_time_t t;
-            bool       trusted = false;
-            if (rtc.readTrusted(t, trusted) == PCF_OK)
-            {
-                timeValid = trusted;
-                Serial0.printf("[rtc] present, now = %04u-%02u-%02u %02u:%02u:%02u  trusted=%s\n",
-                               t.year, t.month, t.day, t.hours, t.minutes, t.seconds,
-                               trusted ? "yes" : "NO(needs sync)");
-            }
-            else
-            {
-                timeValid = false;
-                Serial0.println("[rtc] present but read failed -- time UNRELIABLE");
-            }
+            timeValid = trusted;
+            Serial0.printf("[rtc] present, now = %04u-%02u-%02u %02u:%02u:%02u  trusted=%s\n",
+                           t.year, t.month, t.day, t.hours, t.minutes, t.seconds,
+                           trusted ? "yes" : "NO(needs sync)");
         }
         else
         {
             timeValid = false;
-            Serial0.println("[rtc] not found -- wall clock UNRELIABLE, continuing anyway");
+            Serial0.println("[rtc] present but read failed -- time UNRELIABLE");
         }
+    }
+    else
+    {
+        timeValid = false;
+        Serial0.println("[rtc] not found -- wall clock UNRELIABLE, continuing anyway");
     }
 
     audio_init();
