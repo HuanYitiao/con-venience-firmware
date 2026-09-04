@@ -1,19 +1,17 @@
 #pragma once
 
 // ── SPI Bus ──────────────────────────────────────────────
-#define PIN_SPI_SCK 19
-#define PIN_SPI_MISO 18
-#define PIN_SPI_MOSI 20
+#define PIN_SPI_SCK 11
+#define PIN_SPI_MISO 10
+#define PIN_SPI_MOSI 2
 
 // ── Display (ST75256) ────────────────────────────────────
-#define PIN_DISPLAY_CS 22
-#define PIN_DISPLAY_DC 23
-#define PIN_DISPLAY_BL 15
-// Reset is no longer an ESP GPIO. It is driven by MCP23017
-// Port A (see PIN_MCP_LCD_RST) and must go through the power layer.
+#define PIN_DISPLAY_CS 23
+#define PIN_DISPLAY_DC 15
+#define PIN_DISPLAY_BL 4
 
 // ── MicroSD ──────────────────────────────────────────────
-#define PIN_SD_CS 21
+#define PIN_SD_CS 3
 
 // ── WS2812B LED ──────────────────────────────────────────
 #define PIN_LED 8
@@ -23,19 +21,19 @@
 #define PIN_I2C_SCL 7
 
 // ── I2S Audio ────────────────────────────────────────────
-#define PIN_I2S_BCLK 11
-#define PIN_I2S_LRC 2
-#define PIN_I2S_DIN 10
+#define PIN_I2S_BCLK 21
+#define PIN_I2S_LRC 22
+#define PIN_I2S_DIN 20
 
 // ── ACOM ─────────────────────────────────────────────────
-#define PIN_ACOM_OD 4
-#define PIN_ACOM_PU 5
+#define PIN_ACOM_OD 19
+#define PIN_ACOM_PU 18
 
 // ── ADC ──────────────────────────────────────────────────
 #define PIN_VBAT_ADC 1
 
 // ── MCP23017 ─────────────────────────────────────────────
-#define PIN_MCP_INT 3
+#define PIN_MCP_INT 5
 #define MCP23017_ADDR 0x20
 
 // Buttons on Port B. SW1..SW5 = GPB1..GPB5.
