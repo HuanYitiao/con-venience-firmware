@@ -14,7 +14,8 @@ Designed for fursuiters — two wearers touch devices to exchange contact inform
 - JLX256128G-931 ST75256 4 grey screen 
 - MicroSD card storage 
 - MCP23017 GPIO expander
-- MMAX 98357A audio driver
+- MAX 98357A audio driver
+- PCF85063A Real-time clock
 
 ## Status
 
