@@ -38,11 +38,11 @@
 
 // Buttons on Port B. SW1..SW5 = GPB1..GPB5.
 // GPB0 is the SD-rail sense input, not a button.
-#define PIN_MCP_BTN_UP 1
-#define PIN_MCP_BTN_DOWN 2
-#define PIN_MCP_BTN_PAIR 3
-#define PIN_MCP_BTN_LEFT 4
-#define PIN_MCP_BTN_RIGHT 5
+#define PIN_MCP_BTN_UP 2
+#define PIN_MCP_BTN_DOWN 1
+#define PIN_MCP_BTN_PAIR 5
+#define PIN_MCP_BTN_LEFT 3
+#define PIN_MCP_BTN_RIGHT 4
 
 // Outputs on Port A.
 #define PIN_MCP_BAT_MON_EN 0
