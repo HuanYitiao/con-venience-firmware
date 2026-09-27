@@ -10,6 +10,13 @@ enum
     MENU_COUNT
 };
 
+enum
+{
+    SETTINGS_WIFI = 0,
+    SETTINGS_CLOCK,
+    SETTINGS_COUNT
+};
+
 static state_t       currentState = STATE_IDLE;
 static state_t       prePairingState = STATE_IDLE;
 static state_t       preProfileState = STATE_MENU;
@@ -17,6 +24,7 @@ static int           contactIndex = 0;
 static unsigned long stateEnterTime = 0;
 static int           menuIndex = MENU_PROFILE;
 static int           linkIndex = 0;
+static int           settingsIndex = SETTINGS_WIFI;
 
 void fsmInit()
 {
@@ -27,6 +35,7 @@ void fsmInit()
     stateEnterTime = millis();
     menuIndex = MENU_PROFILE;
     linkIndex = 0;
+    settingsIndex = SETTINGS_WIFI;
 }
 
 state_t fsmGetState()
@@ -47,6 +56,11 @@ int fsmGetMenuSelection()
 int fsmGetLinkIndex()
 {
     return linkIndex;
+}
+
+int fsmGetSettingsSelection()
+{
+    return settingsIndex;
 }
 
 bool fsmIsViewingSelf()
@@ -125,6 +139,10 @@ const char *stateName(state_t s)
             return "PROFILE_QR";
         case STATE_SETTINGS:
             return "SETTINGS";
+        case STATE_SETTINGS_MENU:
+            return "SETTINGS_MENU";
+        case STATE_SETTINGS_CLOCK:
+            return "SETTINGS_CLOCK";
         case STATE_STANDBY:
             return "STANDBY";
         case STATE_LOW_BATTERY:
@@ -231,7 +249,8 @@ void fsmHandleEvent(event_t event)
                             currentState = STATE_CONTACT_LIST;
                             break;
                         case MENU_SETTINGS:
-                            currentState = STATE_SETTINGS;
+                            currentState = STATE_SETTINGS_MENU;
+                            settingsIndex = SETTINGS_WIFI;
                             break;
                     }
                     stateEnterTime = millis();
@@ -356,7 +375,63 @@ void fsmHandleEvent(event_t event)
             switch (event)
             {
                 case EVENT_LEFT_CLICK:
-                    currentState = STATE_MENU;  // side effects (AP down / BLE up) in dispatchEvent
+                    currentState = STATE_SETTINGS_MENU;  // side effects (AP down) in dispatchEvent
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_SETTINGS_MENU:
+            switch (event)
+            {
+                case EVENT_LEFT_CLICK:
+                    currentState = STATE_MENU;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_UP_CLICK:
+                    settingsIndex = (settingsIndex + SETTINGS_COUNT - 1) % SETTINGS_COUNT;
+                    break;
+                case EVENT_DOWN_CLICK:
+                    settingsIndex = (settingsIndex + 1) % SETTINGS_COUNT;
+                    break;
+                case EVENT_RIGHT_CLICK:
+                    switch (settingsIndex)
+                    {
+                        case SETTINGS_WIFI:
+                            currentState = STATE_SETTINGS;  // AP up in dispatchEvent
+                            break;
+                        case SETTINGS_CLOCK:
+                            currentState = STATE_SETTINGS_CLOCK;
+                            break;
+                    }
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_OVERTIME_SHUTDOWN:
+                    currentState = STATE_STANDBY;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_SETTINGS_CLOCK:
+            switch (event)
+            {
+                case EVENT_LEFT_CLICK:
+                    currentState = STATE_SETTINGS_MENU;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_OVERTIME_SHUTDOWN:
+                    currentState = STATE_STANDBY;
                     stateEnterTime = millis();
                     break;
                 case EVENT_BATTERY_LOW:
