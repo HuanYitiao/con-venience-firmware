@@ -34,6 +34,11 @@ void powerInit()
     uint8_t iodir = ioexpReadReg(REG_IODIRA);
     iodir &= ~POWER_PORTA_MASK;
     ioexpWriteReg(REG_IODIRA, iodir);
+
+    powerSetBatMonEnable(true);
+    powerSetPeriphEnable(true);
+    powerSetSpeakerEnable(true);
+    powerSetSleepReq(false);
 }
 
 void powerSetBatMonEnable(bool on)
