@@ -47,13 +47,34 @@ struct ScrollTextState
 #define SCROLL_TEXT_INTERVAL 100
 #define SCROLL_TEXT_PAUSE 1000
 
+// Snapshot of the RTC for the clock page. Fail-closed: the fields are only
+// meaningful when status == CLOCK_OK.
+typedef enum
+{
+    CLOCK_RTC_ERROR,  // I2C read failed
+    CLOCK_NOT_SET,    // read OK but the RTC's validity proofs failed (needs sync)
+    CLOCK_OK
+} clock_status_t;
+
+struct ClockView
+{
+    clock_status_t status;
+    uint16_t       year;
+    uint8_t        month;
+    uint8_t        day;
+    uint8_t        hours;
+    uint8_t        minutes;
+    uint8_t        seconds;
+};
+
 void displayInit();
 void displayClearAll();
 void displayResetScroll();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
-                   int transferPercent, bool transferIndeterminate);
+                   int transferPercent, bool transferIndeterminate, int settingsSelection,
+                   const ClockView &clockView);
 void drawHomepage(const Contact &self);
 void drawWaitContact(const Contact &self);
 void drawConnecting(const Contact &self);
@@ -61,6 +82,8 @@ void drawTransfer(int percent, bool indeterminate);
 void drawContactCard(const Contact &contact);
 void drawMenu(int menuSelection);
 void drawSettings();
+void drawSettingsMenu(int settingsSelection);
+void drawClock(const ClockView &clockView);
 void drawContactList(const char names[][NAME_LEN], int count, int index);
 void drawProfileAvatar(const Contact &contact);
 void drawProfileLinks(const Contact &contact, int linkIndex);

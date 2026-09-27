@@ -162,6 +162,45 @@ void settingsService()
     }
 }
 
+// Live RTC snapshot for the settings clock page. Re-read a few times a second, only
+// while that page is showing; readTrusted() decides whether the time may be believed.
+#define CLOCK_REFRESH_MS 250
+static ClockView clockView = {CLOCK_RTC_ERROR, 0, 0, 0, 0, 0, 0};
+
+static void clockService()
+{
+    static bool          wasActive = false;
+    static unsigned long lastReadMs = 0;
+
+    if (fsmGetState() != STATE_SETTINGS_CLOCK)
+    {
+        wasActive = false;
+        return;
+    }
+
+    unsigned long now = millis();
+    if (wasActive && now - lastReadMs < CLOCK_REFRESH_MS)
+    {
+        return;
+    }
+    wasActive = true;
+    lastReadMs = now;
+
+    pcf_time_t t;
+    bool       trusted = false;
+    if (rtc.readTrusted(t, trusted) != PCF_OK)
+    {
+        clockView = {CLOCK_RTC_ERROR, 0, 0, 0, 0, 0, 0};
+        return;
+    }
+    if (!trusted)
+    {
+        clockView = {CLOCK_NOT_SET, 0, 0, 0, 0, 0, 0};
+        return;
+    }
+    clockView = {CLOCK_OK, t.year, t.month, t.day, t.hours, t.minutes, t.seconds};
+}
+
 void setup()
 {
     ledInit();
@@ -378,6 +417,7 @@ void loop()
     }
 
     settingsService();
+    clockService();
 
     static int lastContactIndex = -1;
     int        currentIndex = fsmGetContactIndex();
@@ -417,5 +457,6 @@ void loop()
     const Contact &profileContact = fsmIsViewingSelf() ? self : currentContact;
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
-                  fsmGetLinkIndex(), transferPercent, transferIndeterminate);
+                  fsmGetLinkIndex(), transferPercent, transferIndeterminate,
+                  fsmGetSettingsSelection(), clockView);
 }

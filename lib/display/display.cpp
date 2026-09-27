@@ -4,7 +4,6 @@
 #include "qrcode.h"
 #include "wifi_config.h"
 
-
 #define PAIRING_FRAME_INTERVAL 200
 
 static const SPISettings DISPLAY_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
@@ -647,21 +646,80 @@ void drawContactCard(const Contact &contact)
     drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
 }
 
-void drawMenu(int menuSelection)
+static void drawListMenu(const char *const *items, int count, int selection)
 {
-    static const char *items[3] = {"My Profile", "Friends", "Settings"};
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < count; i++)
     {
         int  y = 20 + i * 16;
-        bool selected = (menuSelection == i);
+        bool selected = (selection == i);
 
         if (selected)
             canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, 14);
 
         canvasDrawText(fullCanvas, DISPLAY_WIDTH, items[i], 0, y, DISPLAY_WIDTH, 14,
                        u8g2_font_6x10_tf, 8, 2, nullptr, selected ? INV : NOR);
+    }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+void drawMenu(int menuSelection)
+{
+    static const char *const items[3] = {"My Profile", "Friends", "Settings"};
+    drawListMenu(items, 3, menuSelection);
+}
+
+void drawSettingsMenu(int settingsSelection)
+{
+    static const char *const items[2] = {"Wi-Fi setup", "Clock"};
+    drawListMenu(items, 2, settingsSelection);
+}
+
+// Text centered horizontally on the full-width canvas. Regions on this page start on
+// 4-px page boundaries because non-INV canvasDrawText overwrites whole pages.
+static void canvasDrawCentered(const char *text, int y, int h, const uint8_t *font, int textY)
+{
+    u8g2.setFont(font);
+    int w = u8g2.getUTF8Width(text);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, text, 0, y, DISPLAY_WIDTH, h, font,
+                   (DISPLAY_WIDTH - w) / 2, textY, nullptr);
+}
+
+void drawClock(const ClockView &clockView)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_WIDTH, 16);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Clock", 0, 0, DISPLAY_WIDTH, 16, u8g2_font_6x10_tf,
+                   8, 3, nullptr, INV);
+
+    if (clockView.status == CLOCK_OK)
+    {
+        char timeText[12];
+        char dateText[16];
+        snprintf(timeText, sizeof(timeText), "%02u:%02u:%02u", clockView.hours, clockView.minutes,
+                 clockView.seconds);
+        snprintf(dateText, sizeof(dateText), "%04u-%02u-%02u", clockView.year, clockView.month,
+                 clockView.day);
+        canvasDrawCentered(timeText, 32, 36, u8g2_font_logisoso28_tr, 0);
+        canvasDrawCentered(dateText, 80, 16, u8g2_font_7x13B_tf, 0);
+    }
+    else
+    {
+        // Fail-closed: never show a time the RTC cannot vouch for.
+        if (clockView.status == CLOCK_NOT_SET)
+        {
+            canvasDrawCentered("Time not set", 40, 16, u8g2_font_7x13B_tf, 0);
+            canvasDrawCentered("Settings > Wi-Fi setup", 64, 12, u8g2_font_6x10_tf, 0);
+            canvasDrawCentered("to sync time", 76, 12, u8g2_font_6x10_tf, 0);
+        }
+        else
+        {
+            canvasDrawCentered("RTC error", 40, 16, u8g2_font_7x13B_tf, 0);
+            canvasDrawCentered("I2C read failed", 64, 12, u8g2_font_6x10_tf, 0);
+        }
     }
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
@@ -803,7 +861,8 @@ void drawLowBattery()
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
-                   int transferPercent, bool transferIndeterminate)
+                   int transferPercent, bool transferIndeterminate, int settingsSelection,
+                   const ClockView &clockView)
 {
     switch (state)
     {
@@ -839,6 +898,14 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             break;
         case STATE_PROFILE_QR:
             drawProfileQR(profileContact, linkIndex);
+            break;
+        case STATE_SETTINGS:
+            break;  // drawn by settingsService() only when the SoftAP state changes
+        case STATE_SETTINGS_MENU:
+            drawSettingsMenu(settingsSelection);
+            break;
+        case STATE_SETTINGS_CLOCK:
+            drawClock(clockView);
             break;
         case STATE_STANDBY:
             drawStandby();
