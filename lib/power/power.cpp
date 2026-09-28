@@ -1,10 +1,19 @@
 #include "power.h"
 
+#include <Arduino.h>
+
 #include "io_expander.h"
 #include "pins.h"
 
 #define REG_IODIRA 0x00
 #define REG_OLATA 0x0A
+
+#define BOOT_SETTLE_MS 10000
+#define BAT_MON_SETTLE_MS 450
+#define BAT_PRINT_INTERVAL_MS 30000
+
+static uint32_t lastBatPrintMs = 0;
+static bool     batMonStarted = false;
 
 // GPA3 (LCD_RST) is intentionally excluded: it is owned by the display layer.
 #define POWER_PORTA_MASK                                                              \
@@ -35,7 +44,6 @@ void powerInit()
     iodir &= ~POWER_PORTA_MASK;
     ioexpWriteReg(REG_IODIRA, iodir);
 
-    powerSetBatMonEnable(true);
     powerSetPeriphEnable(true);
     powerSetSpeakerEnable(true);
     powerSetSleepReq(false);
@@ -59,4 +67,42 @@ void powerSetSpeakerEnable(bool on)
 void powerSetSleepReq(bool on)
 {
     powerSetBit(PIN_MCP_SLEEP_REQ, on);
+}
+
+void loopBatteryMonitorTask()
+{
+    uint32_t now = millis();
+
+    if (!batMonStarted)
+    {
+        if (now < BOOT_SETTLE_MS)
+        {
+            return;
+        }
+        batMonStarted = true;
+        lastBatPrintMs = now - BAT_PRINT_INTERVAL_MS;
+    }
+
+    if (now - lastBatPrintMs >= BAT_PRINT_INTERVAL_MS)
+    {
+        lastBatPrintMs = now;
+        uint16_t vbatMv = powerReadBatteryMv();
+        Serial0.print("VBAT: ");
+        Serial0.print(vbatMv);
+        Serial0.println(" mV");
+    }
+}
+
+uint16_t powerReadBatteryMv()
+{
+    powerSetBatMonEnable(true);
+    delay(BAT_MON_SETTLE_MS);
+
+    uint32_t adcMv = analogReadMilliVolts(PIN_VBAT_ADC);
+
+    powerSetBatMonEnable(false);
+
+    const float DIVIDER_RATIO = 2.0f;
+
+    return (uint16_t)(adcMv * DIVIDER_RATIO);
 }

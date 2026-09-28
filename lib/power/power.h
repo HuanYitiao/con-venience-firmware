@@ -6,3 +6,6 @@ void powerSetBatMonEnable(bool on);
 void powerSetPeriphEnable(bool on);
 void powerSetSpeakerEnable(bool on);
 void powerSetSleepReq(bool on);
+
+void     loopBatteryMonitorTask();
+uint16_t powerReadBatteryMv();

@@ -271,7 +271,7 @@ void setup()
         {330, 400},
     };
 
-    audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
+    // audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
 
     Serial0.println("audio ready");
     acomInit();
@@ -418,6 +418,7 @@ void loop()
 
     settingsService();
     clockService();
+    loopBatteryMonitorTask();
 
     static int lastContactIndex = -1;
     int        currentIndex = fsmGetContactIndex();
