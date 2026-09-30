@@ -201,6 +201,38 @@ static void clockService()
     clockView = {CLOCK_OK, t.year, t.month, t.day, t.hours, t.minutes, t.seconds};
 }
 
+static void batteryService()
+{
+    static uint32_t lastCheckMs = 0;
+    static uint8_t  lowStreak = 0;
+
+    uint32_t now = millis();
+    if (now < BOOT_SETTLE_MS || now - lastCheckMs < BATTERY_CHECK_INTERVAL_MS)
+    {
+        return;
+    }
+    lastCheckMs = now;
+
+    uint16_t vbatMv = powerReadBatteryMv();
+    Serial0.printf("VBAT: %u mV (lowStreak=%u)\n", vbatMv, lowStreak);
+
+    if (vbatMv < BATTERY_LOW_MV)
+    {
+        if (lowStreak < 255)
+        {
+            lowStreak++;
+        }
+        if (lowStreak >= BATTERY_LOW_CONFIRM_COUNT)
+        {
+            dispatchEvent(EVENT_BATTERY_LOW);
+        }
+    }
+    else
+    {
+        lowStreak = 0;
+    }
+}
+
 void setup()
 {
     ledInit();
@@ -418,7 +450,8 @@ void loop()
 
     settingsService();
     clockService();
-    loopBatteryMonitorTask();
+    // loopBatteryMonitorTask();  // debug
+    batteryService();
 
     static int lastContactIndex = -1;
     int        currentIndex = fsmGetContactIndex();
