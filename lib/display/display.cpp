@@ -404,19 +404,34 @@ static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, in
 // LCD reset moved to MCP23017 GPA3; drive via expander (RMW preserves other Port A bits).
 static void displayReset()
 {
-    uint8_t iodir = ioexpReadReg(0x00);
+    uint8_t iodir = ioexpReadReg(MCP_IODIRA);
     iodir &= ~(1 << PIN_MCP_LCD_RST);
-    ioexpWriteReg(0x00, iodir);
+    ioexpWriteReg(MCP_IODIRA, iodir);
 
-    uint8_t olat = ioexpReadReg(0x0A);
+    uint8_t olat = ioexpReadReg(MCP_OLATA);
 
     olat &= ~(1 << PIN_MCP_LCD_RST);
-    ioexpWriteReg(0x0A, olat);
+    ioexpWriteReg(MCP_OLATA, olat);
     delay(100);
 
     olat |= (1 << PIN_MCP_LCD_RST);
-    ioexpWriteReg(0x0A, olat);
+    ioexpWriteReg(MCP_OLATA, olat);
     delay(100);
+}
+
+// ST75256 VDD is on the always-on +3.3V_MCU rail, so it keeps drawing current
+// while the ESP32 is off. Sleep it, then hold RST low (MCP keeps the level) so
+// the floating SPI lines of the powered-down ESP32 can't disturb it.
+// displayInit() resets it again on the next boot.
+void displaySleep()
+{
+    sendCommand(0x30);  // EXT=0 command set
+    sendCommand(0xAE);  // display off
+    sendCommand(0x95);  // sleep in
+
+    uint8_t olat = ioexpReadReg(MCP_OLATA);
+    olat &= ~(1 << PIN_MCP_LCD_RST);
+    ioexpWriteReg(MCP_OLATA, olat);
 }
 
 // ── public API ─────────────────────────────────────────────

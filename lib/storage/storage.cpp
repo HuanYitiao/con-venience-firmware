@@ -150,6 +150,17 @@ bool storageInit(uint8_t csPin)
     return true;
 }
 
+// Before +3.3V_PERIPH (and with it +3.3V_SD) goes down. CS and MISO go
+// high-Z; R66 then pulls SPI_CS_SD (= U17 OE) high, which disables the level
+// shifter. Ends the shared SPI bus, so the display must be done with it first.
+void storageEnd(uint8_t csPin)
+{
+    SD.end();
+    SPI.end();
+    pinMode(csPin, INPUT);
+    pinMode(PIN_SPI_MISO, INPUT);
+}
+
 bool storageLoadSelf(Contact &contact)
 {
     if (!SD.exists(SELF_JSON) || !SD.exists(SELF_BIN))

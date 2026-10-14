@@ -1,5 +1,7 @@
 #include "audio.h"
 
+#include <Arduino.h>
+
 #include <math.h>
 
 #include "driver/i2s_std.h"
@@ -60,6 +62,11 @@ void audio_deinit(void)
         i2s_del_channel(txHandle);
         txHandle = NULL;
     }
+    // Stop driving the MAX98357A before +3.3V_PERIPH goes down; a high pin
+    // would back-power it through its input clamps.
+    pinMode(PIN_I2S_BCLK, INPUT);
+    pinMode(PIN_I2S_LRC, INPUT);
+    pinMode(PIN_I2S_DIN, INPUT);
 }
 
 void audio_setWaveform(audio_waveform_t wave)

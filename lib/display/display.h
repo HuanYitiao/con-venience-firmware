@@ -68,6 +68,7 @@ struct ClockView
 };
 
 void displayInit();
+void displaySleep();
 void displayClearAll();
 void displayResetScroll();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,

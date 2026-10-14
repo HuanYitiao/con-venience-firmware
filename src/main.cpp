@@ -30,6 +30,13 @@ static bool needProvision = false;
 static Pcf85063a rtc(Wire, 0x51);
 static bool      timeValid = false;
 
+// Time without a button press or state change before the device switches off.
+// Which states may time out is decided by the FSM (EVENT_OVERTIME_SHUTDOWN is
+// ignored in pairing, contact card, settings and BLE transfer).
+#define IDLE_SHUTDOWN_MS (60UL * 1000)
+// While off, wake on the RTC this often for housekeeping (0 = buttons only).
+#define TIMER_WAKE_INTERVAL_S (60UL * 60)
+
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
 static uint8_t bleRxBuf[PACKING_BUF_MAX];
@@ -233,23 +240,55 @@ static void batteryService()
     }
 }
 
+// Power-down order; setup() brings things up in reverse.
+[[noreturn]] static void shutdownDevice()
+{
+    audio_deinit();    // MAX98357 off (SPK_EN low), I2S stopped
+    displaySleep();    // LCD is on the always-on rail; needs SPI, so before SD
+    storageEnd();      // SD CS / MISO high-Z
+    powerPeriphOff();  // peripheral DCDC off
+    powerSleep(TIMER_WAKE_INTERVAL_S);  // MCU_SLEEP_REQ high
+}
+
+// Woken by the RTC only: do the periodic job without bringing up BLE, the
+// display or SD, then go straight back to sleep.
+[[noreturn]] static void timerWakeTask()
+{
+    Serial0.printf("[power] VBAT=%u mV\n", powerReadBatteryMv());
+    powerSleep(TIMER_WAKE_INTERVAL_S);
+}
+
 void setup()
 {
+    Serial0.begin(115200);
+
+    // Power control comes first: after a wake the MCU only stays powered while
+    // the wake INT is asserted, until powerEarlyInit() drops SLEEP_REQ.
+    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+    ioexpInit();
+    powerEarlyInit(rtc);
+    btnInit();
+
+    power_wake_t wake = powerGetWakeReason();
+    Serial0.printf("[power] wake: %s\n", powerWakeName(wake));
+    if (wake == POWER_WAKE_TIMER)
+    {
+        timerWakeTask();
+    }
+
     ledInit();
     ledSetColor(0, 255, 0, 50);
     delay(500);
     ledOff();
 
-    Serial0.begin(115200);
     NimBLEDevice::init("con-venience");
     NimBLEDevice::setMTU(517);
 
     fsmInit();
 
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    ioexpInit();
-    btnInit();
-    powerInit();
+    // Wake order is the reverse of shutdownDevice(): SLEEP_REQ low (done in
+    // powerEarlyInit), peripheral DCDC on, SD, display, MAX98357 last.
+    powerPeriphOn();
 
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(10);
@@ -378,6 +417,22 @@ void loop()
     {
         event = EVENT_RIGHT_LONG_PRESS;
         hasEvent = true;
+    }
+
+    static uint32_t lastActivityMs = 0;
+    static state_t  lastState = STATE_IDLE;
+    if (hasEvent || fsmGetState() != lastState)
+    {
+        lastActivityMs = millis();
+        lastState = fsmGetState();
+    }
+    if (millis() - lastActivityMs > IDLE_SHUTDOWN_MS)
+    {
+        dispatchEvent(EVENT_OVERTIME_SHUTDOWN);
+    }
+    if (fsmGetState() == STATE_STANDBY)
+    {
+        shutdownDevice();
     }
 
     if (hasEvent)

@@ -52,11 +52,11 @@ btn_event_t btnRead(bool pressed, btn_state_t *state)
 
 void btnInit()
 {
-    ioexpWriteReg(0x10, 0xFF);
-    ioexpWriteReg(0x16, 0x3E);
-    ioexpWriteReg(0x12, 0x3E);
-    ioexpWriteReg(0x14, 0x00);
-    ioexpReadReg(0x19);
+    ioexpWriteReg(MCP_IODIRB, 0xFF);
+    ioexpWriteReg(MCP_GPPUB, MCP_BTN_MASK);
+    ioexpWriteReg(MCP_GPINTENB, MCP_BTN_MASK);
+    ioexpWriteReg(MCP_INTCONB, 0x00);  // interrupt on change (powerSleep switches to DEFVAL)
+    ioexpReadReg(MCP_GPIOB);
 
     pinMode(PIN_MCP_INT, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PIN_MCP_INT), [] { mcpIntFlag = true; }, FALLING);
@@ -72,7 +72,7 @@ btn_events_t btnPoll()
     }
     mcpIntFlag = false;
 
-    uint8_t captured = ioexpReadReg(0x19);
+    uint8_t captured = ioexpReadReg(MCP_GPIOB);
 
     events.up = btnRead(!((captured >> PIN_MCP_BTN_UP) & 1), &btnUp);
     events.down = btnRead(!((captured >> PIN_MCP_BTN_DOWN) & 1), &btnDown);
