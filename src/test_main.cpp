@@ -199,8 +199,8 @@ void setup()
     checkI2c();
 
     ioexpInit();
+    powerEarlyInit(rtc);
     btnInit();
-    powerInit();
     checkPortA();
 
     checkRtc();

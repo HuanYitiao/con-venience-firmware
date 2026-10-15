@@ -14,9 +14,19 @@ static const uint8_t REG_DAYS = 0x07;      // day of month, BCD, bits5:0 (1..31)
 static const uint8_t REG_WEEKDAYS = 0x08;  // weekday 0..6, bits2:0 -- NOT written (see setTime)
 static const uint8_t REG_MONTHS = 0x09;    // month, BCD, bits4:0 (1..12); no century bit
 static const uint8_t REG_YEARS = 0x0A;     // year, BCD, 00..99
+static const uint8_t REG_TIMER_VALUE = 0x10;
+static const uint8_t REG_TIMER_MODE = 0x11;
 
 static const uint8_t CTRL1_STOP = 0x20;     // Control_1 bit5: 1 = RTC stopped
 static const uint8_t CTRL2_COF_OFF = 0x07;  // COF[2:0]=111 -> CLKOUT disabled
+static const uint8_t CTRL2_AIE = 0x80;      // alarm interrupt enable
+// Control_2 AF/TF: writing 0 clears the flag, writing 1 leaves it unchanged.
+// MI/HMI (minute interrupts) are always written 0 = off.
+
+static const uint8_t TMODE_TCF_1HZ = 0x10;    // TCF[1:0]=10
+static const uint8_t TMODE_TCF_1_60HZ = 0x18; // TCF[1:0]=11
+static const uint8_t TMODE_TE = 0x04;         // timer enable
+static const uint8_t TMODE_TIE = 0x02;        // timer interrupt enable (TI_TP=0 -> level)
 
 // PCF85063A year register holds two digits only (00..99). We map it onto a
 // full calendar year with this base. The device will not outlive 2099.
@@ -87,8 +97,15 @@ pcf_status_t Pcf85063a::begin()
         return PCF_ERR_ABSENT;
     }
 
-    // Disable CLKOUT: no needless toggling pin, lower power.
-    return writeReg(REG_CONTROL_2, CTRL2_COF_OFF);
+    // Disable CLKOUT: no needless toggling pin, lower power. Keep AIE and do
+    // not clear AF/TF: the RTC may be the reason the MCU just woke up.
+    uint8_t ctrl2 = 0;
+    if (readRegs(REG_CONTROL_2, &ctrl2, 1) != PCF_OK)
+    {
+        return PCF_ERR_I2C;
+    }
+    return writeReg(REG_CONTROL_2,
+                    (uint8_t)((ctrl2 & CTRL2_AIE) | PCF_FLAG_AF | PCF_FLAG_TF | CTRL2_COF_OFF));
 }
 
 pcf_status_t Pcf85063a::setTime(const pcf_time_t &t)
@@ -223,4 +240,64 @@ pcf_status_t Pcf85063a::readRamByte(uint8_t &value)
 pcf_status_t Pcf85063a::writeRamByte(uint8_t value)
 {
     return writeReg(REG_RAM_BYTE, value);
+}
+pcf_status_t Pcf85063a::startTimer(uint32_t seconds)
+{
+    uint8_t tcf = TMODE_TCF_1HZ;
+    uint32_t ticks = seconds;
+    if (ticks > 255)
+    {
+        tcf = TMODE_TCF_1_60HZ;
+        ticks = (seconds + 59) / 60;
+    }
+    if (ticks == 0)
+    {
+        ticks = 1;
+    }
+    if (ticks > 255)
+    {
+        ticks = 255;
+    }
+
+    // Stop the timer before reloading so the new value is taken cleanly.
+    if (writeReg(REG_TIMER_MODE, tcf) != PCF_OK)
+    {
+        return PCF_ERR_I2C;
+    }
+    if (writeReg(REG_TIMER_VALUE, (uint8_t)ticks) != PCF_OK)
+    {
+        return PCF_ERR_I2C;
+    }
+    if (clearFlags() != PCF_OK)
+    {
+        return PCF_ERR_I2C;
+    }
+    return writeReg(REG_TIMER_MODE, (uint8_t)(tcf | TMODE_TE | TMODE_TIE));
+}
+
+pcf_status_t Pcf85063a::stopTimer()
+{
+    return writeReg(REG_TIMER_MODE, 0x00);
+}
+
+pcf_status_t Pcf85063a::readFlags(uint8_t &flags)
+{
+    uint8_t ctrl2 = 0;
+    if (readRegs(REG_CONTROL_2, &ctrl2, 1) != PCF_OK)
+    {
+        return PCF_ERR_I2C;
+    }
+    flags = ctrl2 & (PCF_FLAG_AF | PCF_FLAG_TF);
+    return PCF_OK;
+}
+
+pcf_status_t Pcf85063a::clearFlags()
+{
+    uint8_t ctrl2 = 0;
+    if (readRegs(REG_CONTROL_2, &ctrl2, 1) != PCF_OK)
+    {
+        return PCF_ERR_I2C;
+    }
+    // AF=0, TF=0 clears both; keep AIE and CLKOUT-off.
+    return writeReg(REG_CONTROL_2, (uint8_t)((ctrl2 & CTRL2_AIE) | CTRL2_COF_OFF));
 }

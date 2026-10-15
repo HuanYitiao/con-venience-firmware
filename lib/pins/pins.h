@@ -43,6 +43,9 @@
 #define PIN_MCP_BTN_PAIR 5
 #define PIN_MCP_BTN_LEFT 3
 #define PIN_MCP_BTN_RIGHT 4
+#define MCP_BTN_MASK                                                                \
+    ((1 << PIN_MCP_BTN_UP) | (1 << PIN_MCP_BTN_DOWN) | (1 << PIN_MCP_BTN_PAIR) \
+     | (1 << PIN_MCP_BTN_LEFT) | (1 << PIN_MCP_BTN_RIGHT))
 
 // Outputs on Port A.
 #define PIN_MCP_BAT_MON_EN 0

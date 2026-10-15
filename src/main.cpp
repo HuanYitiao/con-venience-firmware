@@ -30,6 +30,16 @@ static bool needProvision = false;
 static Pcf85063a rtc(Wire, 0x51);
 static bool      timeValid = false;
 
+// Time without a button press or state change before the device switches off.
+// Which states may time out is decided by the FSM (EVENT_OVERTIME_SHUTDOWN is
+// ignored in pairing, contact card, settings and BLE transfer).
+#define IDLE_SHUTDOWN_MS (30UL * 1000)  // TODO: back to 60 s after testing
+// While off, wake on the RTC this often for housekeeping (0 = buttons only).
+#define TIMER_WAKE_INTERVAL_S (60UL * 60)
+// Low battery: how long the warning stays up before the device switches off
+// (buttons only, no RTC wake-ups). Button presses do not extend it.
+#define LOW_BATTERY_SHUTDOWN_MS (5UL * 1000)
+
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
 static uint8_t bleRxBuf[PACKING_BUF_MAX];
@@ -233,23 +243,70 @@ static void batteryService()
     }
 }
 
+// Checked once at boot, for every wake reason: a wake must not hand out the
+// full UI on a flat battery before batteryService() (BOOT_SETTLE_MS + 3
+// checks) would catch it. Only re-reads while the reading stays low.
+static bool bootBatteryLow()
+{
+    for (int i = 0; i < BATTERY_LOW_CONFIRM_COUNT; i++)
+    {
+        uint16_t vbatMv = powerReadBatteryMv();
+        Serial0.printf("[power] boot VBAT: %u mV\n", vbatMv);
+        if (vbatMv >= BATTERY_LOW_MV)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Power-down order; setup() brings things up in reverse.
+[[noreturn]] static void shutdownDevice(uint32_t wakeAfterSec)
+{
+    audio_deinit();    // MAX98357 off (SPK_EN low), I2S stopped
+    displaySleep();    // LCD is on the always-on rail; needs SPI, so before SD
+    storageEnd();      // SD CS / MISO high-Z
+    powerPeriphOff();  // peripheral DCDC off
+    powerSleep(wakeAfterSec);  // MCU_SLEEP_REQ high
+}
+
 void setup()
 {
+    Serial0.begin(115200);
+
+    // Power control comes first: after a wake the MCU only stays powered while
+    // the wake INT is asserted, until powerEarlyInit() drops SLEEP_REQ.
+    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+    ioexpInit();
+    powerEarlyInit(rtc);
+    btnInit();
+
+    power_wake_t wake = powerGetWakeReason();
+    Serial0.printf("[power] wake: %s\n", powerWakeName(wake));
+
+    // Wake order is the reverse of shutdownDevice(): SLEEP_REQ low (done in
+    // powerEarlyInit), peripheral DCDC on, SD, display, MAX98357 last.
+    // The battery is read with the peripheral rail up, as it was validated.
+    powerPeriphOn();
+    bool batteryLow = bootBatteryLow();
+    // Woken by the RTC only: battery fine -> straight back to sleep without
+    // bringing up BLE, the display or SD. Battery low -> boot on and show the
+    // warning like any other low-battery boot.
+    if (wake == POWER_WAKE_TIMER && !batteryLow)
+    {
+        powerPeriphOff();
+        powerSleep(TIMER_WAKE_INTERVAL_S);
+    }
+
     ledInit();
     ledSetColor(0, 255, 0, 50);
     delay(500);
     ledOff();
 
-    Serial0.begin(115200);
     NimBLEDevice::init("con-venience");
     NimBLEDevice::setMTU(517);
 
     fsmInit();
-
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    ioexpInit();
-    btnInit();
-    powerInit();
 
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(10);
@@ -307,6 +364,11 @@ void setup()
 
     Serial0.println("audio ready");
     acomInit();
+
+    if (batteryLow)
+    {
+        dispatchEvent(EVENT_BATTERY_LOW);
+    }
 
     Serial0.println("con-venience ready");
     Serial0.printf("Initial state: %s\n", stateName(fsmGetState()));
@@ -378,6 +440,34 @@ void loop()
     {
         event = EVENT_RIGHT_LONG_PRESS;
         hasEvent = true;
+    }
+
+    static uint32_t lastActivityMs = 0;
+    static uint32_t stateSinceMs = 0;
+    static state_t  lastState = STATE_IDLE;
+    if (fsmGetState() != lastState)
+    {
+        stateSinceMs = millis();
+        lastState = fsmGetState();
+        lastActivityMs = stateSinceMs;
+    }
+    if (hasEvent)
+    {
+        lastActivityMs = millis();
+    }
+    if (millis() - lastActivityMs > IDLE_SHUTDOWN_MS)
+    {
+        dispatchEvent(EVENT_OVERTIME_SHUTDOWN);
+    }
+    if (fsmGetState() == STATE_STANDBY)
+    {
+        shutdownDevice(TIMER_WAKE_INTERVAL_S);
+    }
+    // Low battery: the FSM ignores all events in this state, so a button wake
+    // only lights the warning up again; no feature can be entered.
+    if (fsmGetState() == STATE_LOW_BATTERY && millis() - stateSinceMs > LOW_BATTERY_SHUTDOWN_MS)
+    {
+        shutdownDevice(0);
     }
 
     if (hasEvent)

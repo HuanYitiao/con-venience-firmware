@@ -67,6 +67,7 @@ static inline uint16_t avatarLen(uint8_t res, AvatarMode mode)
 }
 
 bool storageInit(uint8_t csPin = PIN_SD_CS);
+void storageEnd(uint8_t csPin = PIN_SD_CS);
 bool storageLoadSelf(Contact &contact);
 bool storageSaveContact(const Contact &contact);
 bool storageLoadContact(int index, Contact &contact);
