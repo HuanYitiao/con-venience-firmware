@@ -39,6 +39,11 @@ static bool      timeValid = false;
 // Low battery: how long the warning stays up before the device switches off
 // (buttons only, no RTC wake-ups). Button presses do not extend it.
 #define LOW_BATTERY_SHUTDOWN_MS (5UL * 1000)
+// Stay on while powered from USB (for flashing / serial debugging): no idle
+// shutdown, and an RTC wake boots fully instead of going back to sleep. Low
+// battery still switches off.
+#define USB_POWER_NO_SLEEP 1
+#define USB_POLL_MS 500
 
 static bool    bleResultReady = false;
 static bool    bleResultSuccess = false;
@@ -292,7 +297,7 @@ void setup()
     // Woken by the RTC only: battery fine -> straight back to sleep without
     // bringing up BLE, the display or SD. Battery low -> boot on and show the
     // warning like any other low-battery boot.
-    if (wake == POWER_WAKE_TIMER && !batteryLow)
+    if (wake == POWER_WAKE_TIMER && !batteryLow && !(USB_POWER_NO_SLEEP && powerUsbPresent()))
     {
         powerPeriphOff();
         powerSleep(TIMER_WAKE_INTERVAL_S);
@@ -451,7 +456,20 @@ void loop()
         lastState = fsmGetState();
         lastActivityMs = stateSinceMs;
     }
-    if (hasEvent)
+    static uint32_t lastUsbPollMs = 0;
+    static bool     usbPresent = false;
+    if (millis() - lastUsbPollMs >= USB_POLL_MS)
+    {
+        lastUsbPollMs = millis();
+        bool now = USB_POWER_NO_SLEEP && powerUsbPresent();
+        if (now != usbPresent)
+        {
+            usbPresent = now;
+            Serial0.printf("[power] USB %s\n", usbPresent ? "present, sleep disabled" : "removed");
+        }
+    }
+    // Held on USB: the idle timer starts counting only once it is unplugged.
+    if (hasEvent || usbPresent)
     {
         lastActivityMs = millis();
     }

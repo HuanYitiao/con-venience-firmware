@@ -136,6 +136,11 @@ bool powerPeriphIsOn()
     return periphOn;
 }
 
+bool powerUsbPresent()
+{
+    return (ioexpReadReg(MCP_GPIOB) >> PIN_MCP_USB_PWR) & 1;
+}
+
 void powerSetSpeakerEnable(bool on)
 {
     if (on && !periphOn)

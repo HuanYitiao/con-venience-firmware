@@ -36,16 +36,19 @@
 #define PIN_MCP_INT 5
 #define MCP23017_ADDR 0x20
 
-// Buttons on Port B. SW1..SW5 = GPB1..GPB5.
-// GPB0 is the SD-rail sense input, not a button.
-#define PIN_MCP_BTN_UP 2
-#define PIN_MCP_BTN_DOWN 1
-#define PIN_MCP_BTN_PAIR 5
-#define PIN_MCP_BTN_LEFT 3
-#define PIN_MCP_BTN_RIGHT 4
+// Buttons on Port B. SW1..SW5 = GPB2..GPB6 (SW6 is in parallel with SW5).
+// GPB0 is the SD-rail sense input, GPB1 the USB power sense; neither is a button.
+#define PIN_MCP_BTN_UP 3
+#define PIN_MCP_BTN_DOWN 2
+#define PIN_MCP_BTN_PAIR 6
+#define PIN_MCP_BTN_LEFT 4
+#define PIN_MCP_BTN_RIGHT 5
 #define MCP_BTN_MASK                                                                \
     ((1 << PIN_MCP_BTN_UP) | (1 << PIN_MCP_BTN_DOWN) | (1 << PIN_MCP_BTN_PAIR) \
      | (1 << PIN_MCP_BTN_LEFT) | (1 << PIN_MCP_BTN_RIGHT))
+
+// USB_PWR: high while powered from USB
+#define PIN_MCP_USB_PWR 1
 
 // Outputs on Port A.
 #define PIN_MCP_BAT_MON_EN 0

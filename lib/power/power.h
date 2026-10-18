@@ -48,6 +48,9 @@ void powerPeriphOn();
 void powerPeriphOff();
 bool powerPeriphIsOn();
 
+// USB_PWR sense (MCP GPB1).
+bool powerUsbPresent();
+
 // Ignored while +3.3V_PERIPH is off (would back-power the amp via SD_MODE).
 void powerSetSpeakerEnable(bool on);
 void powerSetBatMonEnable(bool on);
