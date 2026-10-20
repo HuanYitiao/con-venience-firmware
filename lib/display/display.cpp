@@ -6,12 +6,13 @@
 
 #define PAIRING_FRAME_INTERVAL 200
 
-static const SPISettings DISPLAY_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
+// Datasheet table 7: 4-wire SPI clock period tSCYC >= 80ns (<= 12.5MHz); 80MHz / 8 = 10MHz
+static const SPISettings DISPLAY_SPI_SETTINGS(10000000, MSBFIRST, SPI_MODE0);
 
-// U8g2 仅用于字体取模计算，从未通过此构造函数实际发送数据到屏幕。
-// 不调用 u8g2.begin()：已验证其内部会通过软件SPI真正发送ST75256初始化序列，
-// 与我们手写的寄存器序列冲突。clearBuffer/setFont/drawUTF8/getBufferPtr 均为纯内存操作，
-// 不依赖 begin()。
+// U8g2 is only used to rasterize fonts into its RAM buffer; it never talks to the panel.
+// Do not call u8g2.begin(): it bit-bangs the full ST75256 init sequence over software SPI,
+// which conflicts with our own register setup. clearBuffer/setFont/drawUTF8/getBufferPtr
+// are pure memory operations and do not need begin().
 static U8G2_ST75256_JLX256128_F_4W_SW_SPI u8g2(U8G2_R0,
                                                /* clock=*/PIN_SPI_SCK,
                                                /* data=*/PIN_SPI_MOSI,
@@ -28,95 +29,114 @@ static ScrollTextState scrollMisc;
 
 static uint8_t fullCanvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
 
+// Mirror of the panel's DDRAM. The ST75256 refreshes the glass from DDRAM on its own,
+// so only the parts of fullCanvas that differ from this mirror need to be sent.
+static uint8_t shadowCanvas[DISPLAY_WIDTH * DISPLAY_NUM_PAGES];
+
+// When true, flushCanvas ignores the mirror and resends everything (init and page changes,
+// so a corrupted DDRAM heals itself)
+static bool forceFlush = false;
+
 // ── low level ST75256 bus ───────────────────────────────────
-static void sendCommand(uint8_t cmd)
+// CS stays low for a whole busBegin/busEnd span; command vs. data is selected by A0 (DC)
+// alone (datasheet fig. 3). SPI.write/writeBytes block until the last bit is shifted out,
+// so DC can be toggled right after they return.
+static void busBegin()
 {
-    digitalWrite(PIN_DISPLAY_DC, LOW);
     SPI.beginTransaction(DISPLAY_SPI_SETTINGS);
     digitalWrite(PIN_DISPLAY_CS, LOW);
-    SPI.transfer(cmd);
+}
+
+static void busEnd()
+{
     digitalWrite(PIN_DISPLAY_CS, HIGH);
     SPI.endTransaction();
+}
+
+static void busCommand(uint8_t cmd)
+{
+    digitalWrite(PIN_DISPLAY_DC, LOW);
+    SPI.write(cmd);
+}
+
+static void busData(const uint8_t *buf, size_t len)
+{
+    digitalWrite(PIN_DISPLAY_DC, HIGH);
+    SPI.writeBytes(buf, len);
+}
+
+static void busData(uint8_t data)
+{
+    busData(&data, 1);
+}
+
+static void sendCommand(uint8_t cmd)
+{
+    busBegin();
+    busCommand(cmd);
+    busEnd();
 }
 
 static void sendData(uint8_t data)
 {
-    digitalWrite(PIN_DISPLAY_DC, HIGH);
-    SPI.beginTransaction(DISPLAY_SPI_SETTINGS);
-    digitalWrite(PIN_DISPLAY_CS, LOW);
-    SPI.transfer(data);
-    digitalWrite(PIN_DISPLAY_CS, HIGH);
-    SPI.endTransaction();
+    busBegin();
+    busData(data);
+    busEnd();
 }
 
+// Must be called between busBegin() and busEnd()
 static void setWindow(uint8_t xs, uint8_t xe, uint8_t ys, uint8_t ye)
 {
-    sendCommand(0x15);
-    sendData(xs);
-    sendData(xe);
-    sendCommand(0x75);
-    sendData(ys);
-    sendData(ye);
-    sendCommand(0x30);
-    sendCommand(0x5C);
+    busCommand(0x15);
+    busData(xs);
+    busData(xe);
+    busCommand(0x75);
+    busData(ys);
+    busData(ye);
+    busCommand(0x30);
+    busCommand(0x5C);
 }
 
-// canvas 布局：numPages 行 × w 列，每字节包含4个像素（2bpp，纵向打包，MSB在上）
-static void draw(const uint8_t *canvas, int x, int y, int w, int h, DrawMode mode = NOR)
+// Sync columns [colX, colX+w) of fullCanvas to the panel. Each page is compared with
+// shadowCanvas and only the span from the first to the last changed column is sent;
+// an unchanged frame never touches the bus.
+// Canvas layout: DISPLAY_NUM_PAGES rows x DISPLAY_WIDTH columns, 4 pixels per byte
+// (2bpp, packed vertically, MSB on top).
+static void flushCanvas(int colX, int w)
 {
-    int startPage = y / DISPLAY_PAGE_HEIGHT;
-    int endPage = (y + h - 1) / DISPLAY_PAGE_HEIGHT;
-    int numPages = endPage - startPage + 1;
+    int  colEnd = colX + w - 1;
+    bool busOpen = false;
 
-    setWindow((uint8_t)x, (uint8_t)(x + w - 1), (uint8_t)startPage, (uint8_t)endPage);
-
-    for (int p = 0; p < numPages; p++)
+    for (int page = 0; page < DISPLAY_NUM_PAGES; page++)
     {
-        const uint8_t *curCol = canvas + p * w;
-        for (int c = 0; c < w; c++)
+        const uint8_t *cur = &fullCanvas[page * DISPLAY_WIDTH];
+        uint8_t       *shadow = &shadowCanvas[page * DISPLAY_WIDTH];
+        int            first = colX;
+        int            last = colEnd;
+
+        if (!forceFlush)
         {
-            uint8_t byteVal = curCol[c];
-            switch (mode)
-            {
-                case NOR:
-                    sendData(byteVal);
-                    break;
-                case INV:
-                    sendData(~byteVal);
-                    break;
-                case BG:
-                {
-                    uint8_t result = 0;
-                    for (int sp = 0; sp < 4; sp++)
-                    {
-                        uint8_t sub = (byteVal >> (sp * 2)) & 0x03;
-                        if (sub == DISPLAY_WHITE)
-                            sub = DISPLAY_LIGHT_GRAY;
-                        result |= (sub << (sp * 2));
-                    }
-                    sendData(result);
-                    break;
-                }
-            }
+            while (first <= colEnd && cur[first] == shadow[first])
+                first++;
+            if (first > colEnd)
+                continue;
+            while (cur[last] == shadow[last])
+                last--;
         }
+
+        if (!busOpen)
+        {
+            busBegin();
+            busOpen = true;
+        }
+        int len = last - first + 1;
+        setWindow((uint8_t)first, (uint8_t)last, (uint8_t)page, (uint8_t)page);
+        busData(&cur[first], len);
+        memcpy(&shadow[first], &cur[first], len);
     }
-}
 
-// 从 fullCanvas（DISPLAY_WIDTH 宽）中抠出列范围 [colX, colX+w) 并发送到屏幕对应位置
-// 用于左右分屏场景：头像和文字分别画在 fullCanvas 的不同列范围后独立发送
-static void drawFromFullCanvas(int colX, int y, int w, int h)
-{
-    int startPage = y / DISPLAY_PAGE_HEIGHT;
-    int endPage = (y + h - 1) / DISPLAY_PAGE_HEIGHT;
-    int numPages = endPage - startPage + 1;
-
-    setWindow((uint8_t)colX, (uint8_t)(colX + w - 1), (uint8_t)startPage, (uint8_t)endPage);
-
-    for (int p = 0; p < numPages; p++)
-    {
-        for (int c = colX; c < colX + w; c++)
-            sendData(fullCanvas[p * DISPLAY_WIDTH + c]);
-    }
+    if (busOpen)
+        busEnd();
 }
 
 // ── canvas helpers ──────────────────────────────────────────
@@ -166,9 +186,9 @@ static void canvasDitherRight(uint8_t *canvas, int canvasW, int x, int y, int w,
 }
 
 // ── avatar ──────────────────────────────────────────────────
-// avatar.bin: ST75256 DDRAM 原生格式，2bpp，page-major column-minor
-// 将头像从 (startX, startY) 开始绘制到 canvas 上
-// avatarRes==128 且 startX==0 时可直接整块透传（最高效且验证正确）
+// avatar.bin is in native ST75256 DDRAM format: 2bpp, page-major, column-minor.
+// Draws the avatar onto the canvas with its top-left corner at (startX, startY).
+// A 128px avatar at the origin is copied page by page (fastest path, verified on hardware).
 static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int startY,
                              const Contact &contact)
 {
@@ -176,7 +196,7 @@ static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int start
 
     if (avatarRes == DISPLAY_AVATAR_WIDTH && startX == 0 && startY == 0 && canvasW == DISPLAY_WIDTH)
     {
-        // 直接把 avatar.bin 写入 canvas 左半区，每行步进 canvasW
+        // Copy avatar.bin straight into the left half of the canvas, stepping canvasW per page
         int srcBytesPerPage = avatarRes;
         for (int page = 0; page < DISPLAY_NUM_PAGES; page++)
         {
@@ -186,9 +206,9 @@ static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int start
         return;
     }
 
-    // 逐像素搬运（非标准尺寸或偏移位置）
-    // avatar.bin 格式：page-major, column-minor, 每字节4个sub-pixel(2bpp)
-    // 每page有 avatarRes 列，每列1字节，字节内从高位到低位依次是 sub-pixel 0..3
+    // Per-pixel copy for other sizes or offsets.
+    // Each source page has avatarRes columns of one byte; within a byte, sub-pixels 0..3
+    // run from the MSB down.
     int srcBytesPerPage = avatarRes;
 
     for (int y = 0; y < avatarRes; y++)
@@ -213,7 +233,7 @@ static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int start
     }
 }
 
-// ── text (via U8g2 取模 → canvas) ──────────────────────────
+// ── text (U8g2 rasterizes → canvas) ───────────────────────
 static void scrollTextInit(ScrollTextState &s)
 {
     s.offset = 0;
@@ -324,7 +344,8 @@ static void canvasDrawText(uint8_t *canvas, int canvasW, const char *text, int r
 
             if (mode == INV)
             {
-                // 高亮反色：有文字像素的位置显示白色，其余保留已有内容（黑底）
+                // Inverted highlight: text pixels become white, everything else keeps the
+                // existing (black) background
                 uint8_t existing = canvas[page * canvasW + col];
                 uint8_t result = existing;
                 for (int sp = 0; sp < 4; sp++)
@@ -376,7 +397,7 @@ static void drawQR(const char *text, uint8_t version = 8, uint8_t ecc = ECC_LOW)
     canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
                       DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 // ── highlight box on canvas ─────────────────────────────────
@@ -392,7 +413,7 @@ static void canvasDrawHighlight(uint8_t *canvas, int canvasW, int x, int y, int 
     }
 }
 
-// filled rectangle in a gray level (ORs onto existing content, so draw the
+// Filled rectangle in a gray level (ORs onto existing content, so draw the
 // lighter track before the darker fill)
 static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, int h, uint8_t gray)
 {
@@ -401,7 +422,7 @@ static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, in
             canvasSetPixel(canvas, canvasW, px, py, gray);
 }
 
-// LCD reset moved to MCP23017 GPA3; drive via expander (RMW preserves other Port A bits).
+// LCD reset is on MCP23017 GPA3; drive it via the expander (RMW preserves other Port A bits).
 static void displayReset()
 {
     uint8_t iodir = ioexpReadReg(MCP_IODIRA);
@@ -420,8 +441,8 @@ static void displayReset()
 }
 
 // ST75256 VDD is on the always-on +3.3V_MCU rail, so it keeps drawing current
-// while the ESP32 is off. Sleep it, then hold RST low (MCP keeps the level) so
-// the floating SPI lines of the powered-down ESP32 can't disturb it.
+// while the ESP32 is held in reset. Sleep it, then hold RST low (MCP keeps the level)
+// so the floating SPI lines (SPI_CS_LCD has no pull-up) can't disturb it.
 // displayInit() resets it again on the next boot.
 void displaySleep()
 {
@@ -500,14 +521,17 @@ void displayInit()
     delay(100);
     sendCommand(0xAF);
 
+    // DDRAM is undefined after reset: write the whole screen so the mirror matches it
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    forceFlush = true;
+    flushCanvas(0, DISPLAY_WIDTH);
+    forceFlush = false;
 }
 
 void displayClearAll()
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void displayResetScroll()
@@ -529,7 +553,7 @@ void drawHomepage(const Contact &self)
     canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
                       DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 // STATE_PAIRING: waiting for physical ACOM wrist contact.
@@ -543,11 +567,10 @@ void drawWaitContact(const Contact &self)
     canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Touch devices", DISPLAY_WIDTH / 2,
                    DISPLAY_HEIGHT / 2, DISPLAY_UI_WIDTH, 18, u8g2_font_7x13B_tf, 0, 0, nullptr);
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
-// STATE_BLE_CONNECTING: physical contact done, BLE link coming up. This is the
-// original ripple animation (kept intact, only renamed from drawPairing).
+// STATE_BLE_CONNECTING: physical contact done, BLE link coming up; ripple animation.
 void drawConnecting(const Contact &self)
 {
     unsigned long now = millis();
@@ -594,7 +617,7 @@ void drawConnecting(const Contact &self)
         }
     }
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 // STATE_BLE_TRANSFER: profile data moving. percent is an honest running total
@@ -615,7 +638,7 @@ void drawTransfer(int percent, bool indeterminate)
         int wDots = u8g2.getUTF8Width("...");
         canvasDrawText(fullCanvas, DISPLAY_WIDTH, "...", (DISPLAY_WIDTH - wDots) / 2, 54,
                        DISPLAY_WIDTH, 18, u8g2_font_8x13B_tf, 0, 0, nullptr);
-        draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+        flushCanvas(0, DISPLAY_WIDTH);
         return;
     }
 
@@ -641,14 +664,14 @@ void drawTransfer(int percent, bool indeterminate)
     if (fillW > 0)
         canvasFillRect(fullCanvas, DISPLAY_WIDTH, barX, barY, fillW, barH, DISPLAY_BLACK);
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void drawContactCard(const Contact &contact)
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
     canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, 0, 0, contact);
-    drawFromFullCanvas(0, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT);
+    flushCanvas(0, DISPLAY_AVATAR_WIDTH);
 
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
     canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 20);
@@ -658,7 +681,7 @@ void drawContactCard(const Contact &contact)
                    14, u8g2_font_7x13B_tf, 4, 2, &scrollLink);
     canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.from, DISPLAY_UI_X, 42, DISPLAY_UI_WIDTH, 14,
                    u8g2_font_7x13B_tf, 4, 2, &scrollMisc);
-    drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
+    flushCanvas(DISPLAY_UI_X, DISPLAY_UI_WIDTH);
 }
 
 static void drawListMenu(const char *const *items, int count, int selection)
@@ -677,7 +700,7 @@ static void drawListMenu(const char *const *items, int count, int selection)
                        u8g2_font_6x10_tf, 8, 2, nullptr, selected ? INV : NOR);
     }
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void drawMenu(int menuSelection)
@@ -737,7 +760,7 @@ void drawClock(const ClockView &clockView)
         }
     }
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void drawSettings()
@@ -776,7 +799,7 @@ void drawSettings()
         canvasDrawText(fullCanvas, DISPLAY_WIDTH, reb, (DISPLAY_WIDTH - wReb) / 2, 72,
                        DISPLAY_WIDTH, 12, u8g2_font_6x10_tf, 0, 0, nullptr);
 
-        draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+        flushCanvas(0, DISPLAY_WIDTH);
     }
 }
 
@@ -804,14 +827,14 @@ void drawContactList(const char names[][NAME_LEN], int count, int index)
                        selected ? INV : NOR);
     }
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void drawProfileAvatar(const Contact &contact)
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
     canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, 0, 0, contact);
-    drawFromFullCanvas(0, 0, DISPLAY_AVATAR_WIDTH, DISPLAY_AVATAR_HEIGHT);
+    flushCanvas(0, DISPLAY_AVATAR_WIDTH);
 
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
     canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 20);
@@ -821,7 +844,7 @@ void drawProfileAvatar(const Contact &contact)
                    14, u8g2_font_7x13B_tf, 4, 2, &scrollLink);
     canvasDrawText(fullCanvas, DISPLAY_WIDTH, contact.from, DISPLAY_UI_X, 42, DISPLAY_UI_WIDTH, 14,
                    u8g2_font_7x13B_tf, 4, 2, &scrollMisc);
-    drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
+    flushCanvas(DISPLAY_UI_X, DISPLAY_UI_WIDTH);
 }
 
 void drawProfileLinks(const Contact &contact, int linkIndex)
@@ -843,7 +866,7 @@ void drawProfileLinks(const Contact &contact, int linkIndex)
                        lineH, u8g2_font_6x10_tf, 4, 2, nullptr, selected ? INV : NOR);
     }
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void drawProfileQR(const Contact &contact, int linkIndex)
@@ -854,7 +877,7 @@ void drawProfileQR(const Contact &contact, int linkIndex)
 void drawStandby()
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void drawLowBattery()
@@ -870,7 +893,7 @@ void drawLowBattery()
     canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Please charge", (DISPLAY_WIDTH - w2) / 2, 60,
                    DISPLAY_WIDTH, 16, u8g2_font_6x10_tf, 0, 0, nullptr);
 
-    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+    flushCanvas(0, DISPLAY_WIDTH);
 }
 
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
@@ -879,6 +902,16 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
                    const ClockView &clockView)
 {
+    // Resend the whole screen on page changes so any DDRAM corruption gets repaired
+    static bool    hasLastState = false;
+    static state_t lastState;
+    if (!hasLastState || state != lastState)
+    {
+        forceFlush = true;
+        hasLastState = true;
+        lastState = state;
+    }
+
     switch (state)
     {
         case STATE_IDLE:
@@ -929,4 +962,6 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             drawLowBattery();
             break;
     }
+
+    forceFlush = false;
 }
