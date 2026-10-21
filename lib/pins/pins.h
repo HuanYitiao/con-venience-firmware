@@ -38,11 +38,11 @@
 
 // Buttons on Port B. SW1..SW5 = GPB2..GPB6 (SW6 is in parallel with SW5).
 // GPB0 is the SD-rail sense input, GPB1 the USB power sense; neither is a button.
-#define PIN_MCP_BTN_UP 3
-#define PIN_MCP_BTN_DOWN 2
+#define PIN_MCP_BTN_UP 5
+#define PIN_MCP_BTN_DOWN 4
 #define PIN_MCP_BTN_PAIR 6
-#define PIN_MCP_BTN_LEFT 4
-#define PIN_MCP_BTN_RIGHT 5
+#define PIN_MCP_BTN_LEFT 2
+#define PIN_MCP_BTN_RIGHT 3
 #define MCP_BTN_MASK                                                                \
     ((1 << PIN_MCP_BTN_UP) | (1 << PIN_MCP_BTN_DOWN) | (1 << PIN_MCP_BTN_PAIR) \
      | (1 << PIN_MCP_BTN_LEFT) | (1 << PIN_MCP_BTN_RIGHT))
