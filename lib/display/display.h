@@ -11,6 +11,8 @@
 #define DISPLAY_WIDTH 256
 #define DISPLAY_HEIGHT 128
 
+#define DISPLAY_BL_DEFAULT 100  // backlight brightness in percent
+
 #define DISPLAY_PAGE_HEIGHT 4
 #define DISPLAY_NUM_PAGES (DISPLAY_HEIGHT / DISPLAY_PAGE_HEIGHT)
 
@@ -69,6 +71,7 @@ struct ClockView
 
 void displayInit();
 void displaySleep();
+void displaySetBacklight(uint8_t percent);  // 0..100 %, 100 = brightest
 void displayClearAll();
 void displayResetScroll();
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,

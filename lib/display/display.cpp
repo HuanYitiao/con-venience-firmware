@@ -6,6 +6,10 @@
 
 #define PAIRING_FRAME_INTERVAL 200
 
+#define DISPLAY_BL_FREQ 5000
+#define DISPLAY_BL_RES_BITS 8
+#define DISPLAY_BL_MAX_DUTY ((1 << DISPLAY_BL_RES_BITS) - 1)
+
 static const SPISettings DISPLAY_SPI_SETTINGS(20000000, MSBFIRST, SPI_MODE0);
 
 // U8g2 仅用于字体取模计算，从未通过此构造函数实际发送数据到屏幕。
@@ -419,12 +423,23 @@ static void displayReset()
     delay(100);
 }
 
+// BL input is active-low: a higher duty makes the backlight darker, so the
+// duty is the inverse of the requested brightness.
+void displaySetBacklight(uint8_t percent)
+{
+    if (percent > 100)
+        percent = 100;
+    ledcWrite(PIN_DISPLAY_BL, DISPLAY_BL_MAX_DUTY - (uint32_t)percent * DISPLAY_BL_MAX_DUTY / 100);
+}
+
 // ST75256 VDD is on the always-on +3.3V_MCU rail, so it keeps drawing current
 // while the ESP32 is off. Sleep it, then hold RST low (MCP keeps the level) so
 // the floating SPI lines of the powered-down ESP32 can't disturb it.
 // displayInit() resets it again on the next boot.
 void displaySleep()
 {
+    displaySetBacklight(0);
+
     sendCommand(0x30);  // EXT=0 command set
     sendCommand(0xAE);  // display off
     sendCommand(0x95);  // sleep in
@@ -443,6 +458,9 @@ void displayInit()
     pinMode(PIN_DISPLAY_DC, OUTPUT);
 
     digitalWrite(PIN_DISPLAY_CS, HIGH);
+
+    ledcAttach(PIN_DISPLAY_BL, DISPLAY_BL_FREQ, DISPLAY_BL_RES_BITS);
+    displaySetBacklight(DISPLAY_BL_DEFAULT);
 
     displayReset();
 
