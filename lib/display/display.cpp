@@ -173,12 +173,14 @@ static void canvasDitherRight(uint8_t *canvas, int canvasW, int x, int y, int w,
 // avatar.bin: ST75256 DDRAM 原生格式，2bpp，page-major column-minor
 // 将头像从 (startX, startY) 开始绘制到 canvas 上
 // avatarRes==128 且 startX==0 时可直接整块透传（最高效且验证正确）
+// rotate180 为 true 时头像旋转 180 度绘制（只走逐像素路径）
 static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int startY,
-                             const Contact &contact)
+                             const Contact &contact, bool rotate180 = false)
 {
     int avatarRes = contact.avatarResolution;
 
-    if (avatarRes == DISPLAY_AVATAR_WIDTH && startX == 0 && startY == 0 && canvasW == DISPLAY_WIDTH)
+    if (!rotate180 && avatarRes == DISPLAY_AVATAR_WIDTH && startX == 0 && startY == 0 &&
+        canvasW == DISPLAY_WIDTH)
     {
         // 直接把 avatar.bin 写入 canvas 左半区，每行步进 canvasW
         int srcBytesPerPage = avatarRes;
@@ -206,8 +208,8 @@ static void canvasBlitAvatar(uint8_t *canvas, int canvasW, int startX, int start
             uint8_t pixel = (srcByte >> ((3 - srcSub) * 2)) & 0x03;
             if (pixel == DISPLAY_WHITE)
                 continue;
-            int px = startX + x;
-            int py = startY + y;
+            int px = startX + (rotate180 ? avatarRes - 1 - x : x);
+            int py = startY + (rotate180 ? avatarRes - 1 - y : y);
             if (px < 0 || px >= canvasW || py < 0 || py >= DISPLAY_HEIGHT)
                 continue;
             int dstPage = py / DISPLAY_PAGE_HEIGHT;
@@ -541,7 +543,7 @@ void drawHomepage(const Contact &self)
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
 
     int startX = (DISPLAY_WIDTH - self.avatarResolution) / 2;
-    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, startX, 0, self);
+    canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, startX, 0, self, true);
 
     canvasDitherLeft(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
     canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
