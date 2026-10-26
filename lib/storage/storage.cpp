@@ -452,3 +452,47 @@ void storageEnsureParentDir(const char *path)
         }
     }
 }
+
+// Demo reset: renames /self_profile and /friends_profiles to the first free
+// /self_profile_N and /friends_profiles_N (same N for both), then recreates them
+// empty so the next boot provisions a new profile. Nothing is deleted; the old
+// data is restored by hand on a PC. Returns N, or -1 on failure.
+int storageArchiveProfiles()
+{
+    char selfDst[PATH_LEN];
+    char friendsDst[PATH_LEN];
+    int  n = 1;
+    for (; n <= ARCHIVE_MAX; n++)
+    {
+        snprintf(selfDst, sizeof(selfDst), "%s_%d", SELF_DIR, n);
+        snprintf(friendsDst, sizeof(friendsDst), "%s_%d", FRIENDS_DIR, n);
+        if (!SD.exists(selfDst) && !SD.exists(friendsDst))
+        {
+            break;
+        }
+    }
+    if (n > ARCHIVE_MAX)
+    {
+        Serial0.println("[storage] archive: no free suffix");
+        return -1;
+    }
+
+    if (SD.exists(SELF_DIR) && !SD.rename(SELF_DIR, selfDst))
+    {
+        Serial0.printf("[storage] archive: rename %s failed\n", SELF_DIR);
+        return -1;
+    }
+    if (SD.exists(FRIENDS_DIR) && !SD.rename(FRIENDS_DIR, friendsDst))
+    {
+        Serial0.printf("[storage] archive: rename %s failed\n", FRIENDS_DIR);
+        return -1;
+    }
+
+    if (!SD.mkdir(SELF_DIR) || !SD.mkdir(FRIENDS_DIR))
+    {
+        Serial0.println("[storage] archive: recreate profile directories failed");
+        return -1;
+    }
+    Serial0.printf("[storage] archived to %s, %s\n", selfDst, friendsDst);
+    return n;
+}

@@ -708,9 +708,10 @@ void drawMenu(int menuSelection)
 
 void drawSettingsMenu(int settingsSelection, bool autoSleep)
 {
-    const char *const items[3] = {"Wi-Fi setup", "Clock",
-                                  autoSleep ? "Auto sleep: On" : "Auto sleep: Off"};
-    drawListMenu(items, 3, settingsSelection);
+    const char *const items[4] = {"Wi-Fi setup", "Clock",
+                                  autoSleep ? "Auto sleep: On" : "Auto sleep: Off",
+                                  "Reset Profile"};
+    drawListMenu(items, 4, settingsSelection);
 }
 
 // Text centered horizontally on the full-width canvas. Regions on this page start on
@@ -758,6 +759,41 @@ void drawClock(const ClockView &clockView)
         }
     }
 
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+void drawResetConfirm(int resetSelection)
+{
+    static const char *const items[2] = {"Cancel", "Reset & reboot"};
+
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_WIDTH, 16);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Reset Profile", 0, 0, DISPLAY_WIDTH, 16,
+                   u8g2_font_6x10_tf, 8, 3, nullptr, INV);
+    canvasDrawCentered("Profile and friends move to", 24, 12, u8g2_font_6x10_tf, 0);
+    canvasDrawCentered("backup folders on the SD card", 36, 12, u8g2_font_6x10_tf, 0);
+
+    for (int i = 0; i < 2; i++)
+    {
+        int  y = 64 + i * 16;
+        bool selected = (resetSelection == i);
+
+        if (selected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, 14);
+
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, items[i], 0, y, DISPLAY_WIDTH, 14,
+                       u8g2_font_6x10_tf, 8, 2, nullptr, selected ? INV : NOR);
+    }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+void drawResetting(bool ok)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawCentered(ok ? "Profile reset" : "Reset failed", 48, 16, u8g2_font_7x13B_tf, 0);
+    canvasDrawCentered("Rebooting...", 68, 12, u8g2_font_6x10_tf, 0);
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
@@ -898,7 +934,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   bool autoSleep, const ClockView &clockView)
+                   bool autoSleep, int resetSelection, const ClockView &clockView)
 {
     switch (state)
     {
@@ -943,6 +979,11 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
         case STATE_SETTINGS_CLOCK:
             drawClock(clockView);
             break;
+        case STATE_SETTINGS_RESET:
+            drawResetConfirm(resetSelection);
+            break;
+        case STATE_PROFILE_RESET:
+            break;  // drawn once by dispatchEvent before the reboot
         case STATE_STANDBY:
             drawStandby();
             break;

@@ -78,7 +78,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   bool autoSleep, const ClockView &clockView);
+                   bool autoSleep, int resetSelection, const ClockView &clockView);
 void drawHomepage(const Contact &self);
 void drawWaitContact(const Contact &self);
 void drawConnecting(const Contact &self);
@@ -88,6 +88,8 @@ void drawMenu(int menuSelection);
 void drawSettings();
 void drawSettingsMenu(int settingsSelection, bool autoSleep);
 void drawClock(const ClockView &clockView);
+void drawResetConfirm(int resetSelection);
+void drawResetting(bool ok);
 void drawContactList(const char names[][NAME_LEN], int count, int index);
 void drawProfileAvatar(const Contact &contact);
 void drawProfileLinks(const Contact &contact, int linkIndex);
