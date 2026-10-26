@@ -706,10 +706,11 @@ void drawMenu(int menuSelection)
     drawListMenu(items, 3, menuSelection);
 }
 
-void drawSettingsMenu(int settingsSelection)
+void drawSettingsMenu(int settingsSelection, bool autoSleep)
 {
-    static const char *const items[2] = {"Wi-Fi setup", "Clock"};
-    drawListMenu(items, 2, settingsSelection);
+    const char *const items[3] = {"Wi-Fi setup", "Clock",
+                                  autoSleep ? "Auto sleep: On" : "Auto sleep: Off"};
+    drawListMenu(items, 3, settingsSelection);
 }
 
 // Text centered horizontally on the full-width canvas. Regions on this page start on
@@ -897,7 +898,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   const ClockView &clockView)
+                   bool autoSleep, const ClockView &clockView)
 {
     switch (state)
     {
@@ -937,7 +938,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
         case STATE_SETTINGS:
             break;  // drawn by settingsService() only when the SoftAP state changes
         case STATE_SETTINGS_MENU:
-            drawSettingsMenu(settingsSelection);
+            drawSettingsMenu(settingsSelection, autoSleep);
             break;
         case STATE_SETTINGS_CLOCK:
             drawClock(clockView);

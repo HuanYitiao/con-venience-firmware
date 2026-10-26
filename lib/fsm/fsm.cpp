@@ -14,6 +14,7 @@ enum
 {
     SETTINGS_WIFI = 0,
     SETTINGS_CLOCK,
+    SETTINGS_AUTO_SLEEP,
     SETTINGS_COUNT
 };
 
@@ -25,6 +26,7 @@ static unsigned long stateEnterTime = 0;
 static int           menuIndex = MENU_PROFILE;
 static int           linkIndex = 0;
 static int           settingsIndex = SETTINGS_WIFI;
+static bool          autoSleep = true;  // RAM only: back on after every boot
 
 void fsmInit()
 {
@@ -61,6 +63,11 @@ int fsmGetLinkIndex()
 int fsmGetSettingsSelection()
 {
     return settingsIndex;
+}
+
+bool fsmGetAutoSleep()
+{
+    return autoSleep;
 }
 
 bool fsmIsViewingSelf()
@@ -404,12 +411,16 @@ void fsmHandleEvent(event_t event)
                     {
                         case SETTINGS_WIFI:
                             currentState = STATE_SETTINGS;  // AP up in dispatchEvent
+                            stateEnterTime = millis();
                             break;
                         case SETTINGS_CLOCK:
                             currentState = STATE_SETTINGS_CLOCK;
+                            stateEnterTime = millis();
+                            break;
+                        case SETTINGS_AUTO_SLEEP:
+                            autoSleep = !autoSleep;  // toggles in place, stays in this menu
                             break;
                     }
-                    stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
                     currentState = STATE_STANDBY;
