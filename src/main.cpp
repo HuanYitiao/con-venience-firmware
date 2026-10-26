@@ -476,8 +476,9 @@ void loop()
             Serial0.printf("[power] USB %s\n", usbPresent ? "present, sleep disabled" : "removed");
         }
     }
-    // Held on USB: the idle timer starts counting only once it is unplugged.
-    if (hasEvent || usbPresent)
+    // Held on USB, or auto sleep switched off in settings (demo mode): the idle
+    // timer starts counting only once that ends. Low battery still shuts down.
+    if (hasEvent || usbPresent || !fsmGetAutoSleep())
     {
         lastActivityMs = millis();
     }
@@ -609,5 +610,5 @@ void loop()
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
                   fsmGetLinkIndex(), transferPercent, transferIndeterminate,
-                  fsmGetSettingsSelection(), clockView);
+                  fsmGetSettingsSelection(), fsmGetAutoSleep(), clockView);
 }

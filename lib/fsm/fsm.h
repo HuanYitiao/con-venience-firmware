@@ -56,5 +56,6 @@ int           fsmGetContactIndex();
 int           fsmGetMenuSelection();
 int           fsmGetLinkIndex();
 int           fsmGetSettingsSelection();
+bool          fsmGetAutoSleep();
 bool          fsmIsViewingSelf();
 unsigned long fsmGetStateEnterTime();
