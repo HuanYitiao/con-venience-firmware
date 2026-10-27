@@ -680,5 +680,5 @@ void loop()
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
                   fsmGetLinkIndex(), transferPercent, transferIndeterminate,
                   fsmGetSettingsSelection(), fsmGetAutoSleep(), fsmGetResetSelection(), clockView,
-                  powerBatteryLevel());
+                  powerBatteryLevel(), powerLastBatteryMv());
 }

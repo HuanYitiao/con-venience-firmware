@@ -693,10 +693,8 @@ void drawContactCard(const Contact &contact)
     drawFromFullCanvas(DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, DISPLAY_HEIGHT);
 }
 
-static void drawListMenu(const char *const *items, int count, int selection)
+static void drawListItems(const char *const *items, int count, int selection)
 {
-    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
-
     for (int i = 0; i < count; i++)
     {
         int  y = 20 + i * 16;
@@ -708,14 +706,36 @@ static void drawListMenu(const char *const *items, int count, int selection)
         canvasDrawText(fullCanvas, DISPLAY_WIDTH, items[i], 0, y, DISPLAY_WIDTH, 14,
                        u8g2_font_6x10_tf, 8, 2, nullptr, selected ? INV : NOR);
     }
+}
 
+static void drawListMenu(const char *const *items, int count, int selection)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    drawListItems(items, count, selection);
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
-void drawMenu(int menuSelection)
+// batteryMv == 0: no reading this boot (e.g. on USB), shown as "--".
+void drawMenu(int menuSelection, uint16_t batteryMv)
 {
     static const char *const items[3] = {"My Profile", "Friends", "Settings"};
-    drawListMenu(items, 3, menuSelection);
+
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    char batText[16];
+    if (batteryMv > 0)
+        snprintf(batText, sizeof(batText), "BAT %u.%02uV", batteryMv / 1000,
+                 (batteryMv % 1000) / 10);
+    else
+        snprintf(batText, sizeof(batText), "BAT --");
+    u8g2.setFont(u8g2_font_6x10_tf);
+    int w = u8g2.getUTF8Width(batText);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, batText, 0, 4, DISPLAY_WIDTH, 12, u8g2_font_6x10_tf,
+                   DISPLAY_WIDTH - w - 8, 1, nullptr);
+
+    drawListItems(items, 3, menuSelection);
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
 void drawSettingsMenu(int settingsSelection, bool autoSleep)
@@ -977,7 +997,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
                    bool autoSleep, int resetSelection, const ClockView &clockView,
-                   uint8_t batteryLevel)
+                   uint8_t batteryLevel, uint16_t batteryMv)
 {
     switch (state)
     {
@@ -1000,7 +1020,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             drawContactCard(currentContact);
             break;
         case STATE_MENU:
-            drawMenu(menuSelection);
+            drawMenu(menuSelection, batteryMv);
             break;
         case STATE_CONTACT_LIST:
             drawContactList(contactNames, contactCount, contactIndex);
