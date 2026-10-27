@@ -88,11 +88,20 @@ bool packingUnpack(const uint8_t *data, size_t len, char *outUuid)
     jsonFile.write(data + 4, jsonLen);
     jsonFile.close();
 
+    // Re-pairing the same uuid overwrites this friend; without a new avatar the
+    // old one must go, or the updated profile would show a stale picture.
+    char binPath[PATH_LEN];
+    snprintf(binPath, sizeof(binPath), "%s/avatar.bin", dirPath);
     size_t avatarSize = len - 4 - jsonLen;
-    if (avatarSize > 0)
+    if (avatarSize == 0)
     {
-        char binPath[PATH_LEN];
-        snprintf(binPath, sizeof(binPath), "%s/avatar.bin", dirPath);
+        if (SD.exists(binPath))
+        {
+            SD.remove(binPath);
+        }
+    }
+    else
+    {
         File binFile = SD.open(binPath, FILE_WRITE);
         if (!binFile)
         {
