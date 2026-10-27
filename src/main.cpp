@@ -593,10 +593,9 @@ void loop()
         }
     }
 
-    // Only the not-yet-connected phase times out; once a link is up the exchange
-    // ends on its own (completion, or disconnect via BLE supervision timeout).
-    if (fsmGetState() == STATE_BLE_CONNECTING && !bleIsConnected()
-        && millis() - fsmGetStateEnterTime() > BLE_CONNECT_TIMEOUT_MS)
+    // Supervision timeout only catches a lost link, not a peer that stays connected
+    // but stops talking; leaving the BLE state makes dispatchEvent() call bleStop().
+    if (isBleActiveState(fsmGetState()) && bleIdleMs() > BLE_IDLE_TIMEOUT_MS)
     {
         dispatchEvent(EVENT_BLE_FAILURE);
     }

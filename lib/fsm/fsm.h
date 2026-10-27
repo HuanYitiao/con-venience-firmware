@@ -47,8 +47,8 @@ typedef enum
 
 #define CARD_DISPLAY_MS 10000
 #define PAIRING_TIMEOUT_MS 30000
-// BLE_CONNECTING gives up if no link comes up within this time.
-#define BLE_CONNECT_TIMEOUT_MS 10000
+// Both BLE states give up after this long without application-level progress.
+#define BLE_IDLE_TIMEOUT_MS 10000
 
 const char *eventName(event_t e);
 const char *stateName(state_t s);

@@ -18,7 +18,10 @@
 
 static ble_callback_t        s_callback = nullptr;
 static bool                  s_busy = false;
-static volatile bool         s_connected = false;
+// Last application-level progress (connect, GATT read/write); main times out on it.
+static volatile unsigned long s_last_activity_ms = 0;
+// Set by bleStop(): the session was torn down, so its result must not be reported.
+static volatile bool          s_aborted = false;
 static uint8_t               s_peer_mac[6];
 static uint8_t               s_peer_type = 0;
 static uint8_t               s_rx_buf[PROFILE_LEN_MAX];
@@ -45,12 +48,16 @@ static volatile uint16_t s_srv_tx_total = 0;   // server: own profile chunks (ph
 static volatile uint16_t s_srv_rx_total = 0;   // server: peer profile chunks (from header)
 static volatile uint16_t s_srv_rx_chunks = 0;  // server: phase-2 chunks received
 
+static void bleTouch()
+{
+    s_last_activity_ms = millis();
+}
+
 static void bleFinish(bool success)
 {
     NimBLEDevice::stopAdvertising();
-    s_connected = false;
     s_busy = false;
-    if (s_callback)
+    if (s_callback && !s_aborted)
         s_callback(success, s_rx_buf, s_rx_len);
 }
 
@@ -71,6 +78,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks
     {
         auto   raw = pChar->getValue();
         size_t rawLen = pChar->getLength();
+        bleTouch();
 
         // Chunk request from client: [REQ_MAGIC][index_hi][index_lo]
         if (rawLen == 3 && raw[0] == REQ_MAGIC)
@@ -117,6 +125,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks
 
     void onRead(NimBLECharacteristic *pChar, NimBLEConnInfo &connInfo) override
     {
+        bleTouch();
         uint16_t total = (s_tx_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
         uint16_t i = s_req_chunk;
 
@@ -146,14 +155,13 @@ class ServerCallbacks : public NimBLEServerCallbacks
     void onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) override
     {
         NimBLEDevice::stopAdvertising();
-        s_connected = true;
+        bleTouch();
         Serial0.println("Server: client connected");
     }
 
     void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) override
     {
         Serial0.println("Server: client disconnected");
-        s_connected = false;
         bleFinish(s_rx_len > 0);
     }
 };
@@ -164,7 +172,7 @@ static void clientTask(void *)
     Serial0.printf("Client: direct connect to %s type=%d\n", addr.toString().c_str(), s_peer_type);
 
     NimBLEClient *pClient = NimBLEDevice::createClient();
-    // Default is 30 s; fail well before main's BLE_CONNECT_TIMEOUT_MS instead.
+    // Default is 30 s; fail well before main's BLE_IDLE_TIMEOUT_MS instead.
     pClient->setConnectTimeout(5000);
     if (!pClient->connect(addr))
     {
@@ -175,13 +183,14 @@ static void clientTask(void *)
         return;
     }
 
-    s_connected = true;
+    bleTouch();
     Serial0.println("Client: connected");
     pClient->setDataLen(251);
     pClient->exchangeMTU();
     Serial0.printf("MTU: %d\n", pClient->getMTU());
 
     NimBLERemoteService *pSvc = pClient->getService(SERVICE_UUID);
+    bleTouch();
     if (!pSvc)
     {
         Serial0.println("Client: service not found");
@@ -211,7 +220,8 @@ static void clientTask(void *)
     // progress denominator. 3-byte header: [HDR_MAGIC][len_hi][len_lo].
     {
         uint8_t hdr[3] = {HDR_MAGIC, (uint8_t)(s_tx_len >> 8), (uint8_t)(s_tx_len & 0xFF)};
-        pRx->writeValue(hdr, 3, true);
+        if (pRx->writeValue(hdr, 3, true))
+            bleTouch();
         Serial0.printf("Client: sent size header, %d bytes (%d chunks)\n", (int)s_tx_len, txTotal);
     }
 
@@ -224,7 +234,7 @@ static void clientTask(void *)
     int      retries = 0;
     bool     recvOk = true;
 
-    while (i < total)
+    while (i < total && !s_aborted)
     {
         uint8_t req[3] = {REQ_MAGIC, (uint8_t)(i >> 8), (uint8_t)(i & 0xFF)};
         if (!pRx->writeValue(req, 3, true))
@@ -267,6 +277,7 @@ static void clientTask(void *)
         }
 
         retries = 0;
+        bleTouch();
         if (!rxTotalKnown)
         {
             rxTotal = total;
@@ -292,7 +303,7 @@ static void clientTask(void *)
     }
 
     // --- Send own profile to server via write ---
-    for (uint16_t j = 0; j < txTotal; j++)
+    for (uint16_t j = 0; j < txTotal && !s_aborted; j++)
     {
         size_t  offset = (size_t)j * CHUNK_SIZE;
         size_t  len = min((size_t)CHUNK_SIZE, s_tx_len - offset);
@@ -304,7 +315,8 @@ static void clientTask(void *)
         pkt[3] = txTotal & 0xFF;
         memcpy(pkt + 4, s_tx_buf + offset, len);
 
-        pRx->writeValue(pkt, len + 4, true);
+        if (pRx->writeValue(pkt, len + 4, true))
+            bleTouch();
         if (rxTotalKnown)
             s_prog_done = rxTotal + (j + 1);  // receive done, now sending
         Serial0.printf("Client: chunk %d/%d sent\n", j + 1, txTotal);
@@ -327,7 +339,8 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
     }
     Serial0.printf("bleStart: my_profile_len=%d\n", my_profile_len);
     s_busy = true;
-    s_connected = false;
+    s_aborted = false;
+    bleTouch();
     s_callback = callback;
 
     s_rx_len = 0;
@@ -371,7 +384,28 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
 
 void bleStop()
 {
+    // Tear the session down for real: just stopping advertising would leave an
+    // established link exchanging profiles in the background.
+    s_aborted = true;
     NimBLEDevice::stopAdvertising();
+
+    NimBLEServer *pServer = NimBLEDevice::getServer();
+    if (pServer)
+    {
+        for (uint16_t handle : pServer->getPeerDevices())
+        {
+            pServer->disconnect(handle);
+        }
+    }
+
+    // Client side: abort a pending connect, or drop an established link. Either
+    // way the client task's blocking GATT call fails and it exits on its own.
+    ble_gap_conn_cancel();
+    for (NimBLEClient *pClient : NimBLEDevice::getConnectedClients())
+    {
+        pClient->disconnect();
+    }
+
     s_busy = false;
 }
 
@@ -380,9 +414,12 @@ bool bleIsBusy()
     return s_busy;
 }
 
-bool bleIsConnected()
+unsigned long bleIdleMs()
 {
-    return s_connected;
+    // Read the stamp before millis(): a callback touching it in between must not
+    // make it newer than "now" and wrap the difference.
+    unsigned long last = s_last_activity_ms;
+    return millis() - last;
 }
 
 ble_prog_t bleGetProgress(uint16_t *done_chunks, uint16_t *total_chunks)
