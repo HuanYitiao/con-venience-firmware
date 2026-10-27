@@ -225,10 +225,10 @@ static void batLevelStore(uint8_t level)
     }
 }
 
-void powerBatteryLevelInit(bool coldBoot)
+void powerBatteryLevelInit(bool poweredUp)
 {
     batLevel = BAT_LEVEL_UNKNOWN;
-    if (coldBoot)
+    if (poweredUp)
     {
         batLevelStore(BAT_LEVEL_UNKNOWN);
         return;

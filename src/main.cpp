@@ -318,7 +318,10 @@ void setup()
     powerPeriphOn();
     usbPresent = USB_POWER_NO_SLEEP && powerUsbPresent();
     Serial0.printf("[power] USB %s\n", usbPresent ? "present, sleep disabled" : "absent");
-    powerBatteryLevelInit(wake == POWER_WAKE_COLD_BOOT);
+    // COLD_BOOT also covers ESP.restart() / panic / WDT (SLEEP_REQ is clear then
+    // too); only a real power-up (battery inserted or power switch) means the
+    // cells may have been replaced.
+    powerBatteryLevelInit(wake == POWER_WAKE_COLD_BOOT && esp_reset_reason() == ESP_RST_POWERON);
     bool batteryLow = !usbPresent && bootBatteryLow();
     // Woken by the RTC only: battery fine -> straight back to sleep without
     // bringing up BLE, the display or SD. Battery low -> boot on and show the

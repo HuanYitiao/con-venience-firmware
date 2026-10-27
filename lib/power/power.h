@@ -16,7 +16,7 @@ class Pcf85063a;
 // The cells cannot recharge, so the level only ever goes down: a reading must
 // be BATTERY_LEVEL_HYST_MV below a step to count (load sag / rest recovery),
 // and each reading drops at most one level. It is kept in NVS across sleep and
-// re-measured from scratch on a cold boot (battery swapped).
+// re-measured from scratch after a power-up (battery swapped or power switch).
 #define BATTERY_LEVELS 8
 #define BATTERY_LEVEL_HYST_MV 80
 
@@ -68,9 +68,9 @@ void powerSetBatMonEnable(bool on);
 uint16_t powerReadBatteryMv();
 void     loopBatteryMonitorTask();  // debug: prints VBAT every BAT_PRINT_INTERVAL_MS
 
-// Loads the stored level, or forgets it on a cold boot. Call once per boot,
+// Loads the stored level, or forgets it after a power-up. Call once per boot,
 // before the first powerBatteryLevelUpdate().
-void    powerBatteryLevelInit(bool coldBoot);
+void    powerBatteryLevelInit(bool poweredUp);
 // Feeds a VBAT reading into the gauge. Skip readings taken on USB power.
 void    powerBatteryLevelUpdate(uint16_t vbatMv);
 uint8_t powerBatteryLevel();  // 0..BATTERY_LEVELS
