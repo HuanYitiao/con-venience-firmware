@@ -1,6 +1,7 @@
 #include "power.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 
 #include "io_expander.h"
 #include "pcf85063a.h"
@@ -28,6 +29,16 @@ static bool         periphOn = false;
 
 static uint32_t lastBatPrintMs = 0;
 static bool     batMonStarted = false;
+
+// Lowest VBAT (mV) for each level 1..BATTERY_LEVELS (index 0 unused), roughly
+// 1.0..1.47 V per alkaline cell under light load. Tune against real discharge data.
+static const uint16_t kBatLevelMv[BATTERY_LEVELS + 1] = {0,    3000, 3200, 3400, 3600,
+                                                         3800, 4000, 4200, 4400};
+#define BAT_LEVEL_UNKNOWN 0xFF
+#define BAT_NVS_NAMESPACE "power"
+#define BAT_NVS_KEY "batLevel"
+
+static uint8_t batLevel = BAT_LEVEL_UNKNOWN;
 
 static void powerSetBit(uint8_t bit, bool on)
 {
@@ -192,6 +203,74 @@ void loopBatteryMonitorTask()
         Serial0.print(vbatMv);
         Serial0.println(" mV");
     }
+}
+
+static uint8_t batLevelFromMv(uint16_t vbatMv)
+{
+    uint8_t level = 0;
+    while (level < BATTERY_LEVELS && vbatMv >= kBatLevelMv[level + 1])
+    {
+        level++;
+    }
+    return level;
+}
+
+static void batLevelStore(uint8_t level)
+{
+    Preferences prefs;
+    if (prefs.begin(BAT_NVS_NAMESPACE, false))
+    {
+        prefs.putUChar(BAT_NVS_KEY, level);
+        prefs.end();
+    }
+}
+
+void powerBatteryLevelInit(bool poweredUp)
+{
+    batLevel = BAT_LEVEL_UNKNOWN;
+    if (poweredUp)
+    {
+        batLevelStore(BAT_LEVEL_UNKNOWN);
+        return;
+    }
+    Preferences prefs;
+    if (prefs.begin(BAT_NVS_NAMESPACE, true))
+    {
+        batLevel = prefs.getUChar(BAT_NVS_KEY, BAT_LEVEL_UNKNOWN);
+        prefs.end();
+    }
+    if (batLevel > BATTERY_LEVELS)
+    {
+        batLevel = BAT_LEVEL_UNKNOWN;
+    }
+}
+
+void powerBatteryLevelUpdate(uint16_t vbatMv)
+{
+    uint8_t level;
+    if (batLevel == BAT_LEVEL_UNKNOWN)
+    {
+        level = batLevelFromMv(vbatMv);
+    }
+    else
+    {
+        uint8_t measured = batLevelFromMv(vbatMv + BATTERY_LEVEL_HYST_MV);
+        if (measured >= batLevel)
+        {
+            return;
+        }
+        level = batLevel - 1;
+    }
+    Serial0.printf("[power] battery level %u -> %u (%u mV)\n",
+                   batLevel == BAT_LEVEL_UNKNOWN ? BATTERY_LEVELS : batLevel, level, vbatMv);
+    batLevel = level;
+    batLevelStore(level);
+}
+
+uint8_t powerBatteryLevel()
+{
+    // Nothing measured yet (e.g. on USB without a battery): show full.
+    return batLevel == BAT_LEVEL_UNKNOWN ? BATTERY_LEVELS : batLevel;
 }
 
 void powerSleep(uint32_t wakeAfterSec)

@@ -16,7 +16,9 @@
 #define DISPLAY_PAGE_HEIGHT 4
 #define DISPLAY_NUM_PAGES (DISPLAY_HEIGHT / DISPLAY_PAGE_HEIGHT)
 
-#define DISPLAY_DITHER_WIDTH (DISPLAY_WIDTH / 8)
+#define DISPLAY_DITHER_WIDTH 48       // side band width at full battery
+#define DISPLAY_DITHER_STEP 5         // narrower per battery level below full
+#define DISPLAY_DITHER_EMPTY_WIDTH 2  // solid edge line at battery level 0
 #define DISPLAY_AVATAR_WIDTH 128
 #define DISPLAY_AVATAR_HEIGHT 128
 #define DISPLAY_UI_X 128
@@ -78,8 +80,9 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   bool autoSleep, int resetSelection, const ClockView &clockView);
-void drawHomepage(const Contact &self);
+                   bool autoSleep, int resetSelection, const ClockView &clockView,
+                   uint8_t batteryLevel);
+void drawHomepage(const Contact &self, uint8_t batteryLevel);
 void drawWaitContact(const Contact &self);
 void drawConnecting(const Contact &self);
 void drawTransfer(int percent, bool indeterminate);

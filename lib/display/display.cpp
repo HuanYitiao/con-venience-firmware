@@ -1,6 +1,7 @@
 #include "display.h"
 
 #include "io_expander.h"
+#include "power.h"
 #include "qrcode.h"
 #include "wifi_config.h"
 
@@ -138,35 +139,53 @@ static void canvasSetPixel(uint8_t *canvas, int canvasW, int x, int y, uint8_t g
     canvas[page * canvasW + x] |= grayVal << ((3 - sub) * 2);
 }
 
+// filled rectangle in a gray level (ORs onto existing content, so draw the
+// lighter track before the darker fill)
+static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, int h, uint8_t gray)
+{
+    for (int py = y; py < y + h && py < DISPLAY_HEIGHT; py++)
+        for (int px = x; px < x + w && px < canvasW; px++)
+            canvasSetPixel(canvas, canvasW, px, py, gray);
+}
+
 // ── dither ──────────────────────────────────────────────────
 static const uint8_t kBayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
 
-static void canvasDitherLeft(uint8_t *canvas, int canvasW, int x, int y, int w, int h)
+// Full-height band, black at the outer edge and fading inward with density 1 - t^2
+// (t = col / w). mirror puts the outer edge on the right; the Bayer pattern is
+// indexed by col so the right band is an exact mirror of the left.
+static void canvasDitherBand(uint8_t *canvas, int canvasW, int x, int w, bool mirror)
 {
-    for (int py = y; py < y + h; py++)
+    for (int col = 0; col < w; col++)
     {
-        for (int px = x; px < x + w; px++)
+        int density = 16 - (16 * col * col + w * w / 2) / (w * w);  // black where bayer < density
+        int px = mirror ? x + w - 1 - col : x + col;
+        for (int py = 0; py < DISPLAY_HEIGHT; py++)
         {
-            int col = px - x;
-            int threshold = (col * 16) / w;
-            if (kBayer4[py % 4][px % 4] >= threshold)
+            if (kBayer4[py % 4][col % 4] < density)
                 canvasSetPixel(canvas, canvasW, px, py, DISPLAY_BLACK);
         }
     }
 }
 
-static void canvasDitherRight(uint8_t *canvas, int canvasW, int x, int y, int w, int h)
+// Side bands doubling as the battery gauge: BATTERY_LEVELS draws the full
+// DISPLAY_DITHER_WIDTH, each level below narrows both bands by
+// DISPLAY_DITHER_STEP, and level 0 leaves only a thin solid line at each edge.
+static void canvasDrawSideBands(uint8_t *canvas, uint8_t batteryLevel = BATTERY_LEVELS)
 {
-    for (int py = y; py < y + h; py++)
+    if (batteryLevel == 0)
     {
-        for (int px = x; px < x + w; px++)
-        {
-            int col = (x + w - 1) - px;
-            int threshold = (col * 16) / w;
-            if (kBayer4[py % 4][px % 4] >= threshold)
-                canvasSetPixel(canvas, canvasW, px, py, DISPLAY_BLACK);
-        }
+        canvasFillRect(canvas, DISPLAY_WIDTH, 0, 0, DISPLAY_DITHER_EMPTY_WIDTH, DISPLAY_HEIGHT,
+                       DISPLAY_BLACK);
+        canvasFillRect(canvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_EMPTY_WIDTH, 0,
+                       DISPLAY_DITHER_EMPTY_WIDTH, DISPLAY_HEIGHT, DISPLAY_BLACK);
+        return;
     }
+    if (batteryLevel > BATTERY_LEVELS)
+        batteryLevel = BATTERY_LEVELS;
+    int w = DISPLAY_DITHER_WIDTH - (BATTERY_LEVELS - batteryLevel) * DISPLAY_DITHER_STEP;
+    canvasDitherBand(canvas, DISPLAY_WIDTH, 0, w, false);
+    canvasDitherBand(canvas, DISPLAY_WIDTH, DISPLAY_WIDTH - w, w, true);
 }
 
 // ── avatar ──────────────────────────────────────────────────
@@ -378,9 +397,7 @@ static void drawQR(const char *text, uint8_t version = 8, uint8_t ecc = ECC_LOW)
         }
     }
 
-    canvasDitherLeft(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
-    canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
-                      DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
+    canvasDrawSideBands(fullCanvas);
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
@@ -396,15 +413,6 @@ static void canvasDrawHighlight(uint8_t *canvas, int canvasW, int x, int y, int 
         for (int px = x; px < x + w && px < canvasW; px++)
             canvas[page * canvasW + px] |= pix;
     }
-}
-
-// filled rectangle in a gray level (ORs onto existing content, so draw the
-// lighter track before the darker fill)
-static void canvasFillRect(uint8_t *canvas, int canvasW, int x, int y, int w, int h, uint8_t gray)
-{
-    for (int py = y; py < y + h && py < DISPLAY_HEIGHT; py++)
-        for (int px = x; px < x + w && px < canvasW; px++)
-            canvasSetPixel(canvas, canvasW, px, py, gray);
 }
 
 // LCD reset moved to MCP23017 GPA3; drive via expander (RMW preserves other Port A bits).
@@ -538,16 +546,14 @@ void displayResetScroll()
 }
 
 // ── draw functions ──────────────────────────────────────────
-void drawHomepage(const Contact &self)
+void drawHomepage(const Contact &self, uint8_t batteryLevel)
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
 
     int startX = (DISPLAY_WIDTH - self.avatarResolution) / 2;
     canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, startX, 0, self, true);
 
-    canvasDitherLeft(fullCanvas, DISPLAY_WIDTH, 0, 0, DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
-    canvasDitherRight(fullCanvas, DISPLAY_WIDTH, DISPLAY_WIDTH - DISPLAY_DITHER_WIDTH, 0,
-                      DISPLAY_DITHER_WIDTH, DISPLAY_HEIGHT);
+    canvasDrawSideBands(fullCanvas, batteryLevel);
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
@@ -934,7 +940,8 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   bool autoSleep, int resetSelection, const ClockView &clockView)
+                   bool autoSleep, int resetSelection, const ClockView &clockView,
+                   uint8_t batteryLevel)
 {
     switch (state)
     {
@@ -942,7 +949,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             if (idleShowQR)
                 drawProfileQR(self, 0);
             else
-                drawHomepage(self);
+                drawHomepage(self, batteryLevel);
             break;
         case STATE_PAIRING:
             drawWaitContact(self);

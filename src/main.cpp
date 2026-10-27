@@ -247,6 +247,7 @@ static void batteryService()
 
     uint16_t vbatMv = powerReadBatteryMv();
     Serial0.printf("VBAT: %u mV (lowStreak=%u)\n", vbatMv, lowStreak);
+    powerBatteryLevelUpdate(vbatMv);
 
     if (vbatMv < BATTERY_LOW_MV)
     {
@@ -267,13 +268,18 @@ static void batteryService()
 
 // Checked once at boot, for every wake reason: a wake must not hand out the
 // full UI on a flat battery before batteryService() (BOOT_SETTLE_MS + 3
-// checks) would catch it. Only re-reads while the reading stays low.
+// checks) would catch it. Only re-reads while the reading stays low. The first
+// reading also feeds the battery gauge.
 static bool bootBatteryLow()
 {
     for (int i = 0; i < BATTERY_LOW_CONFIRM_COUNT; i++)
     {
         uint16_t vbatMv = powerReadBatteryMv();
         Serial0.printf("[power] boot VBAT: %u mV\n", vbatMv);
+        if (i == 0)
+        {
+            powerBatteryLevelUpdate(vbatMv);
+        }
         if (vbatMv >= BATTERY_LOW_MV)
         {
             return false;
@@ -312,6 +318,10 @@ void setup()
     powerPeriphOn();
     usbPresent = USB_POWER_NO_SLEEP && powerUsbPresent();
     Serial0.printf("[power] USB %s\n", usbPresent ? "present, sleep disabled" : "absent");
+    // COLD_BOOT also covers ESP.restart() / panic / WDT (SLEEP_REQ is clear then
+    // too); only a real power-up (battery inserted or power switch) means the
+    // cells may have been replaced.
+    powerBatteryLevelInit(wake == POWER_WAKE_COLD_BOOT && esp_reset_reason() == ESP_RST_POWERON);
     bool batteryLow = !usbPresent && bootBatteryLow();
     // Woken by the RTC only: battery fine -> straight back to sleep without
     // bringing up BLE, the display or SD. Battery low -> boot on and show the
@@ -620,5 +630,6 @@ void loop()
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
                   fsmGetLinkIndex(), transferPercent, transferIndeterminate,
-                  fsmGetSettingsSelection(), fsmGetAutoSleep(), fsmGetResetSelection(), clockView);
+                  fsmGetSettingsSelection(), fsmGetAutoSleep(), fsmGetResetSelection(), clockView,
+                  powerBatteryLevel());
 }

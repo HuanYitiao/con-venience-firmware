@@ -8,8 +8,17 @@ class Pcf85063a;
 #define BAT_PRINT_INTERVAL_MS 30000
 
 #define BATTERY_CHECK_INTERVAL_MS 30000
-#define BATTERY_LOW_MV 3000
+#define BATTERY_LOW_MV 2700
 #define BATTERY_LOW_CONFIRM_COUNT 3
+
+// Battery gauge for 3x AA alkaline, shown as the homepage side bands.
+// Level 0 = nearly empty (still above BATTERY_LOW_MV), BATTERY_LEVELS = full.
+// The cells cannot recharge, so the level only ever goes down: a reading must
+// be BATTERY_LEVEL_HYST_MV below a step to count (load sag / rest recovery),
+// and each reading drops at most one level. It is kept in NVS across sleep and
+// re-measured from scratch after a power-up (battery swapped or power switch).
+#define BATTERY_LEVELS 8
+#define BATTERY_LEVEL_HYST_MV 80
 
 // How the MCU is kept alive / switched off (DigiFur Rev1.0, sheet MCU):
 //
@@ -58,6 +67,13 @@ void powerSetBatMonEnable(bool on);
 // Switches the battery monitor on, samples VBAT, switches it off again.
 uint16_t powerReadBatteryMv();
 void     loopBatteryMonitorTask();  // debug: prints VBAT every BAT_PRINT_INTERVAL_MS
+
+// Loads the stored level, or forgets it after a power-up. Call once per boot,
+// before the first powerBatteryLevelUpdate().
+void    powerBatteryLevelInit(bool poweredUp);
+// Feeds a VBAT reading into the gauge. Skip readings taken on USB power.
+void    powerBatteryLevelUpdate(uint16_t vbatMv);
+uint8_t powerBatteryLevel();  // 0..BATTERY_LEVELS
 
 // Turns the MCU off. Wakes on a button press, and after wakeAfterSec seconds
 // if non-zero (RTC countdown, periodic). Peripherals must already be shut
