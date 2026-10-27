@@ -24,6 +24,8 @@ static Contact currentContact = {};
 #define CONTACTS_MAX 64
 static char contactNames[CONTACTS_MAX][NAME_LEN] = {};
 static int  contactCount = 0;
+// List index currentContact was last loaded from; -1 forces a reload.
+static int  lastContactIndex = -1;
 static bool idleShowQR = false;
 static bool needProvision = false;
 
@@ -547,10 +549,17 @@ void loop()
         }
         else if (bleResultSuccess)
         {
-            bool ok = packingUnpack(bleRxBuf, bleRxLen);
+            char peerUuid[UUID_LEN];
+            bool ok = packingUnpack(bleRxBuf, bleRxLen, peerUuid);
             Serial0.printf("unpack: %s\n", ok ? "OK" : "FAIL");
             if (ok)
             {
+                // The contact card shows currentContact: point it at the peer just
+                // received, not whatever the friends list index last loaded. The
+                // list reloads its own entry when it is opened again.
+                bool loaded = storageLoadContactByUuid(peerUuid, currentContact);
+                Serial0.printf("loadContact %s: %s\n", peerUuid, loaded ? "OK" : "FAIL");
+                lastContactIndex = -1;
                 contactCount = min(storageCountContacts(), CONTACTS_MAX);
                 for (int i = 0; i < contactCount; i++)
                 {
@@ -605,9 +614,10 @@ void loop()
     // loopBatteryMonitorTask();  // debug
     batteryService();
 
-    static int lastContactIndex = -1;
-    int        currentIndex = fsmGetContactIndex();
-    if (contactCount > 0 && currentIndex != lastContactIndex)
+    int currentIndex = fsmGetContactIndex();
+    // The contact card holds the freshly paired peer; don't overwrite it from the list.
+    if (contactCount > 0 && currentIndex != lastContactIndex
+        && fsmGetState() != STATE_CONTACT_CARD)
     {
         bool ok = storageLoadContact(currentIndex, currentContact);
         Serial0.printf("loadContact %d: %s\n", currentIndex, ok ? "OK" : "FAIL");
