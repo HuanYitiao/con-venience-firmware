@@ -11,7 +11,6 @@
 #include "display.h"
 #include "fsm.h"
 #include "io_expander.h"
-#include "led.h"
 #include "packing.h"
 #include "pcf85063a.h"
 #include "pins.h"
@@ -339,11 +338,6 @@ void setup()
         powerPeriphOff();
         powerSleep(TIMER_WAKE_INTERVAL_S);
     }
-
-    ledInit();
-    ledSetColor(0, 255, 0, 50);
-    delay(500);
-    ledOff();
 
     NimBLEDevice::init("con-venience");
     NimBLEDevice::setMTU(517);
