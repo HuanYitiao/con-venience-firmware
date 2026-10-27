@@ -369,20 +369,21 @@ static void canvasDrawText(uint8_t *canvas, int canvasW, const char *text, int r
 }
 
 // ── QR ──────────────────────────────────────────────────────
-static void drawQR(const char *text, uint8_t version = 8, uint8_t ecc = ECC_LOW)
+// Draws the QR centered horizontally within [areaX, areaX + areaW) on fullCanvas.
+// Module size leaves room for the quiet zone on every side inside the area.
+static void canvasDrawQR(const char *text, uint8_t version, uint8_t ecc, int areaX, int areaW)
 {
     QRCode  qrcode;
     uint8_t qrcodeData[qrcode_getBufferSize(8)];
     qrcode_initText(&qrcode, qrcodeData, version, ecc, text);
 
-    int moduleSize = DISPLAY_QR_SIZE / qrcode.size;
+    int fit = areaW < DISPLAY_QR_SIZE ? areaW : DISPLAY_QR_SIZE;
+    int moduleSize = fit / (qrcode.size + 2 * DISPLAY_QR_QUIET_MODULES);
     if (moduleSize < 1)
         moduleSize = 1;
     int qrPixelSize = qrcode.size * moduleSize;
-    int offsetX = (DISPLAY_WIDTH - qrPixelSize) / 2;
+    int offsetX = areaX + (areaW - qrPixelSize) / 2;
     int offsetY = (DISPLAY_HEIGHT - qrPixelSize) / 2;
-
-    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
 
     for (int y = 0; y < qrcode.size; y++)
     {
@@ -396,7 +397,12 @@ static void drawQR(const char *text, uint8_t version = 8, uint8_t ecc = ECC_LOW)
                                    offsetY + y * moduleSize + dy, DISPLAY_BLACK);
         }
     }
+}
 
+static void drawQR(const char *text, uint8_t version = 8, uint8_t ecc = ECC_LOW)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawQR(text, version, ecc, 0, DISPLAY_WIDTH);
     canvasDrawSideBands(fullCanvas);
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
@@ -803,15 +809,37 @@ void drawResetting(bool ok)
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
+// Setup step: QR on the left half, title + instruction lines on the right half
+static void drawSetupStep(const char *qr, uint8_t version, uint8_t ecc, const char *title,
+                          const char *const *lines, int lineCount)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawQR(qr, version, ecc, 0, DISPLAY_QR_SIZE);
+
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, title, DISPLAY_UI_X, 16, DISPLAY_UI_WIDTH, 16,
+                   u8g2_font_7x13B_tf, 4, 0, nullptr);
+    for (int i = 0; i < lineCount; i++)
+    {
+        if (lines[i][0] == '\0')
+            continue;
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, lines[i], DISPLAY_UI_X, 40 + i * 12,
+                       DISPLAY_UI_WIDTH, 12, u8g2_font_6x10_tf, 4, 0, nullptr);
+    }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
 void drawSettings()
 {
     if (!wifiConfigClientConnected())
     {
-        drawQR(wifiConfigWifiQr(), 3, ECC_LOW);
+        const char *lines[] = {"Scan to join Wi-Fi"};
+        drawSetupStep(wifiConfigWifiQr(), 3, ECC_LOW, "Step 1/2", lines, 1);
     }
     else if (!wifiConfigUploadDone())
     {
-        drawQR(wifiConfigUrl(), 2, ECC_MEDIUM);
+        const char *lines[] = {"Scan to open the", "setup page", "", "Or visit:", wifiConfigUrl()};
+        drawSetupStep(wifiConfigUrl(), 2, ECC_MEDIUM, "Step 2/2", lines, 5);
     }
     else
     {
