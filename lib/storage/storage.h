@@ -73,6 +73,7 @@ void storageEnd(uint8_t csPin = PIN_SD_CS);
 bool storageLoadSelf(Contact &contact);
 bool storageSaveContact(const Contact &contact);
 bool storageLoadContact(int index, Contact &contact);
+bool storageLoadContactByUuid(const char *uuid, Contact &contact);
 int  storageCountContacts();
 bool storageLoadContactName(int index, char *username, int maxLen);
 

@@ -275,6 +275,8 @@ bool storageSaveContact(const Contact &contact)
     return true;
 }
 
+static bool loadContactDir(const char *dirName, Contact &contact);
+
 bool storageLoadContact(int index, Contact &contact)
 {
     File dir = SD.open(FRIENDS_DIR, FILE_READ);
@@ -306,12 +308,31 @@ bool storageLoadContact(int index, Contact &contact)
         return false;
     }
 
-    char jsonPath[PATH_LEN];
-    char binPath[PATH_LEN];
-    snprintf(jsonPath, sizeof(jsonPath), "%s/%s/profile.json", FRIENDS_DIR, file.name());
-    snprintf(binPath, sizeof(binPath), "%s/%s/avatar.bin", FRIENDS_DIR, file.name());
+    char dirName[PATH_LEN];
+    strlcpy(dirName, file.name(), sizeof(dirName));
     file.close();
     dir.close();
+
+    return loadContactDir(dirName, contact);
+}
+
+bool storageLoadContactByUuid(const char *uuid, Contact &contact)
+{
+    char safeUuid[UUID_LEN];
+    if (!storageUuidValidate(uuid, safeUuid))
+    {
+        return false;
+    }
+    return loadContactDir(safeUuid, contact);
+}
+
+// Loads FRIENDS_DIR/<dirName>/{profile.json,avatar.bin}.
+static bool loadContactDir(const char *dirName, Contact &contact)
+{
+    char jsonPath[PATH_LEN];
+    char binPath[PATH_LEN];
+    snprintf(jsonPath, sizeof(jsonPath), "%s/%s/profile.json", FRIENDS_DIR, dirName);
+    snprintf(binPath, sizeof(binPath), "%s/%s/avatar.bin", FRIENDS_DIR, dirName);
 
     File jsonFile = SD.open(jsonPath, FILE_READ);
     if (!jsonFile)

@@ -47,7 +47,7 @@ size_t packingPack(uint8_t *out, size_t outLen)
     return totalLen;
 }
 
-bool packingUnpack(const uint8_t *data, size_t len)
+bool packingUnpack(const uint8_t *data, size_t len, char *outUuid)
 {
     if (len < 4)
     {
@@ -102,5 +102,9 @@ bool packingUnpack(const uint8_t *data, size_t len)
         binFile.close();
     }
 
+    if (outUuid)
+    {
+        strlcpy(outUuid, safeUuid, UUID_LEN);
+    }
     return true;
 }
