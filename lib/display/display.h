@@ -100,3 +100,4 @@ void drawProfileLinks(const Contact &contact, int linkIndex);
 void drawProfileQR(const Contact &contact, int linkIndex);
 void drawStandby();
 void drawLowBattery();
+void drawNoSdCard();

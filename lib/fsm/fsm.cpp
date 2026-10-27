@@ -133,6 +133,8 @@ const char *eventName(event_t e)
             return "BLE_FAILURE";
         case EVENT_ENTER_SETTINGS:
             return "ENTER_SETTINGS";
+        case EVENT_NO_SD_CARD:
+            return "NO_SD_CARD";
         case EVENT_BATTERY_LOW:
             return "BATTERY_LOW";
         case EVENT_OVERTIME_SHUTDOWN:
@@ -172,6 +174,8 @@ const char *stateName(state_t s)
             return "SETTINGS_RESET";
         case STATE_PROFILE_RESET:
             return "PROFILE_RESET";
+        case STATE_NO_SD_CARD:
+            return "NO_SD_CARD";
         case STATE_STANDBY:
             return "STANDBY";
         case STATE_LOW_BATTERY:
@@ -207,6 +211,10 @@ void fsmHandleEvent(event_t event)
                 case EVENT_ENTER_SETTINGS:
                     provisioning = true;
                     currentState = STATE_SETTINGS;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_NO_SD_CARD:
+                    currentState = STATE_NO_SD_CARD;
                     stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
@@ -574,6 +582,22 @@ void fsmHandleEvent(event_t event)
 
         case STATE_LOW_BATTERY:
             // Completely locked, does not respond to any events
+            break;
+
+        case STATE_NO_SD_CARD:
+            // Buttons do nothing; inserting a card reboots (see loop()).
+            switch (event)
+            {
+                case EVENT_OVERTIME_SHUTDOWN:
+                    currentState = STATE_STANDBY;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
             break;
     }
 }

@@ -28,6 +28,10 @@ static int  contactCount = 0;
 static int  lastContactIndex = -1;
 static bool idleShowQR = false;
 static bool needProvision = false;
+// Card in and mounted. Without it nothing works: the UI locks on a prompt.
+static bool sdReady = false;
+// Last GPB0 reading, for spotting a card going in while the prompt is up.
+static bool sdSensed = false;
 
 static Pcf85063a rtc(Wire, 0x51);
 static bool      timeValid = false;
@@ -46,6 +50,8 @@ static bool      timeValid = false;
 // and an RTC wake boots fully instead of going back to sleep.
 #define USB_POWER_NO_SLEEP 1
 #define USB_POLL_MS 500
+// No-SD prompt: let the card seat in the slot before rebooting into it.
+#define SD_INSERT_SETTLE_MS 500
 
 static bool usbPresent = false;
 
@@ -346,18 +352,24 @@ void setup()
 
     SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, -1);
     delay(10);
-    storageInit();
-    char selfId[UUID_LEN];
-    storageEnsureSelfId(selfId);
-    needProvision = !storageLoadSelf(self);
-    Serial0.printf("self: name=%s res=%d links=%d id=%s provision=%d\n", self.name,
-                   self.avatarResolution, self.linkCount, self.uuid, needProvision);
-    contactCount = min(storageCountContacts(), CONTACTS_MAX);
-    Serial0.printf("contactCount: %d\n", contactCount);
-    for (int i = 0; i < contactCount; i++)
+    sdSensed = powerSdPresent();
+    sdReady = sdSensed && storageInit();
+    Serial0.printf("[sd] card %s, %s\n", sdSensed ? "present" : "absent",
+                   sdReady ? "mounted" : "NOT mounted");
+    if (sdReady)
     {
-        storageLoadContactName(i, contactNames[i], NAME_LEN);
-        Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
+        char selfId[UUID_LEN];
+        storageEnsureSelfId(selfId);
+        needProvision = !storageLoadSelf(self);
+        Serial0.printf("self: name=%s res=%d links=%d id=%s provision=%d\n", self.name,
+                       self.avatarResolution, self.linkCount, self.uuid, needProvision);
+        contactCount = min(storageCountContacts(), CONTACTS_MAX);
+        Serial0.printf("contactCount: %d\n", contactCount);
+        for (int i = 0; i < contactCount; i++)
+        {
+            storageLoadContactName(i, contactNames[i], NAME_LEN);
+            Serial0.printf("loaded name %d: %s\n", i, contactNames[i]);
+        }
     }
 
     displayInit();
@@ -401,6 +413,11 @@ void setup()
     Serial0.println("audio ready");
     acomInit();
 
+    if (!sdReady)
+    {
+        dispatchEvent(EVENT_NO_SD_CARD);
+    }
+    // After the SD check, so low battery wins over the SD prompt.
     if (batteryLow)
     {
         dispatchEvent(EVENT_BATTERY_LOW);
@@ -496,6 +513,20 @@ void loop()
         {
             usbPresent = now;
             Serial0.printf("[power] USB %s\n", usbPresent ? "present, sleep disabled" : "removed");
+        }
+
+        // No-SD prompt: a card going in (absent -> present edge) reboots into the
+        // normal boot path. Edge only, so a card that fails to mount does not loop.
+        if (fsmGetState() == STATE_NO_SD_CARD)
+        {
+            bool sd = (ioexpReadReg(MCP_GPIOB) >> PIN_MCP_SD_SENSE) & 1;
+            if (sd && !sdSensed)
+            {
+                Serial0.println("[sd] card inserted, rebooting");
+                delay(SD_INSERT_SETTLE_MS);
+                ESP.restart();
+            }
+            sdSensed = sd;
         }
     }
     // Held on USB, or auto sleep switched off in settings (demo mode): the idle
