@@ -539,7 +539,13 @@ void loop()
     if (bleResultReady)
     {
         bleResultReady = false;
-        if (bleResultSuccess)
+        // A result arriving after we left the BLE flow (e.g. connect timeout) is
+        // dropped: the user already saw it fail, so don't save a contact silently.
+        if (!isBleActiveState(fsmGetState()))
+        {
+            Serial0.println("BLE result ignored: no longer in BLE state");
+        }
+        else if (bleResultSuccess)
         {
             bool ok = packingUnpack(bleRxBuf, bleRxLen);
             Serial0.printf("unpack: %s\n", ok ? "OK" : "FAIL");
@@ -576,6 +582,14 @@ void loop()
         {
             dispatchEvent(EVENT_PAIRING_OVERTIME);
         }
+    }
+
+    // Only the not-yet-connected phase times out; once a link is up the exchange
+    // ends on its own (completion, or disconnect via BLE supervision timeout).
+    if (fsmGetState() == STATE_BLE_CONNECTING && !bleIsConnected()
+        && millis() - fsmGetStateEnterTime() > BLE_CONNECT_TIMEOUT_MS)
+    {
+        dispatchEvent(EVENT_BLE_FAILURE);
     }
 
     if (fsmGetState() == STATE_CONTACT_CARD)
