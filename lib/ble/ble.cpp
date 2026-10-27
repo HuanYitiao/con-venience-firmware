@@ -18,6 +18,7 @@
 
 static ble_callback_t        s_callback = nullptr;
 static bool                  s_busy = false;
+static volatile bool         s_connected = false;
 static uint8_t               s_peer_mac[6];
 static uint8_t               s_peer_type = 0;
 static uint8_t               s_rx_buf[PROFILE_LEN_MAX];
@@ -47,6 +48,7 @@ static volatile uint16_t s_srv_rx_chunks = 0;  // server: phase-2 chunks receive
 static void bleFinish(bool success)
 {
     NimBLEDevice::stopAdvertising();
+    s_connected = false;
     s_busy = false;
     if (s_callback)
         s_callback(success, s_rx_buf, s_rx_len);
@@ -144,12 +146,14 @@ class ServerCallbacks : public NimBLEServerCallbacks
     void onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) override
     {
         NimBLEDevice::stopAdvertising();
+        s_connected = true;
         Serial0.println("Server: client connected");
     }
 
     void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) override
     {
         Serial0.println("Server: client disconnected");
+        s_connected = false;
         bleFinish(s_rx_len > 0);
     }
 };
@@ -160,6 +164,8 @@ static void clientTask(void *)
     Serial0.printf("Client: direct connect to %s type=%d\n", addr.toString().c_str(), s_peer_type);
 
     NimBLEClient *pClient = NimBLEDevice::createClient();
+    // Default is 30 s; fail well before main's BLE_CONNECT_TIMEOUT_MS instead.
+    pClient->setConnectTimeout(5000);
     if (!pClient->connect(addr))
     {
         Serial0.println("Client: connect failed");
@@ -169,6 +175,7 @@ static void clientTask(void *)
         return;
     }
 
+    s_connected = true;
     Serial0.println("Client: connected");
     pClient->setDataLen(251);
     pClient->exchangeMTU();
@@ -320,6 +327,7 @@ void bleStart(const uint8_t peer_mac[6], uint8_t peer_type, ble_role_t role,
     }
     Serial0.printf("bleStart: my_profile_len=%d\n", my_profile_len);
     s_busy = true;
+    s_connected = false;
     s_callback = callback;
 
     s_rx_len = 0;
@@ -370,6 +378,11 @@ void bleStop()
 bool bleIsBusy()
 {
     return s_busy;
+}
+
+bool bleIsConnected()
+{
+    return s_connected;
 }
 
 ble_prog_t bleGetProgress(uint16_t *done_chunks, uint16_t *total_chunks)

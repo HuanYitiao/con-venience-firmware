@@ -537,7 +537,8 @@ void fsmHandleEvent(event_t event)
                     currentState = STATE_CONTACT_CARD;
                     stateEnterTime = millis();
                     break;
-                case EVENT_PAIRING_LONG_PRESS:
+                // Long press is ignored: once BLE is up the exchange runs to completion,
+                // so cancelling would leave the peer with our profile anyway.
                 case EVENT_BLE_FAILURE:
                     currentState = prePairingState;
                     stateEnterTime = millis();
@@ -554,7 +555,8 @@ void fsmHandleEvent(event_t event)
                     currentState = STATE_CONTACT_CARD;
                     stateEnterTime = millis();
                     break;
-                case EVENT_PAIRING_LONG_PRESS:
+                // Long press is ignored: once BLE is up the exchange runs to completion,
+                // so cancelling would leave the peer with our profile anyway.
                 case EVENT_BLE_FAILURE:
                     currentState = prePairingState;
                     stateEnterTime = millis();
