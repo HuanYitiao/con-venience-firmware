@@ -25,6 +25,7 @@
 #define DISPLAY_UI_WIDTH 128
 #define DISPLAY_UI_HEIGHT 128
 #define DISPLAY_QR_SIZE 128
+#define DISPLAY_QR_QUIET_MODULES 4  // blank border required around a QR code
 
 enum DrawMode
 {
