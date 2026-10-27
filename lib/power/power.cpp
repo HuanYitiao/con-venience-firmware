@@ -40,7 +40,8 @@ static const uint16_t kBatLevelMv[BATTERY_LEVELS + 1] = {0,    3000, 3200, 3400,
 #define BAT_NVS_NAMESPACE "power"
 #define BAT_NVS_KEY "batLevel"
 
-static uint8_t batLevel = BAT_LEVEL_UNKNOWN;
+static uint8_t  batLevel = BAT_LEVEL_UNKNOWN;
+static uint16_t lastBatMv = 0;
 
 static void powerSetBit(uint8_t bit, bool on)
 {
@@ -199,7 +200,13 @@ uint16_t powerReadBatteryMv()
     }
 
     powerSetBatMonEnable(false);
-    return (uint16_t)(sum / POWER_BAT_SAMPLES * POWER_BAT_DIVIDER);
+    lastBatMv = (uint16_t)(sum / POWER_BAT_SAMPLES * POWER_BAT_DIVIDER);
+    return lastBatMv;
+}
+
+uint16_t powerLastBatteryMv()
+{
+    return lastBatMv;
 }
 
 void loopBatteryMonitorTask()

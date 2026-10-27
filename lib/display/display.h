@@ -82,13 +82,13 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
                    bool autoSleep, int resetSelection, const ClockView &clockView,
-                   uint8_t batteryLevel);
+                   uint8_t batteryLevel, uint16_t batteryMv);
 void drawHomepage(const Contact &self, uint8_t batteryLevel);
 void drawWaitContact(const Contact &self);
 void drawConnecting(const Contact &self);
 void drawTransfer(int percent, bool indeterminate);
 void drawContactCard(const Contact &contact);
-void drawMenu(int menuSelection);
+void drawMenu(int menuSelection, uint16_t batteryMv);
 void drawSettings();
 void drawSettingsMenu(int settingsSelection, bool autoSleep);
 void drawClock(const ClockView &clockView);

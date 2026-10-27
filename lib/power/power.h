@@ -70,6 +70,7 @@ void powerSetBatMonEnable(bool on);
 
 // Switches the battery monitor on, samples VBAT, switches it off again.
 uint16_t powerReadBatteryMv();
+uint16_t powerLastBatteryMv();  // last powerReadBatteryMv() result, 0 = none this boot
 void     loopBatteryMonitorTask();  // debug: prints VBAT every BAT_PRINT_INTERVAL_MS
 
 // Loads the stored level, or forgets it after a power-up. Call once per boot,
