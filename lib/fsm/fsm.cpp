@@ -36,6 +36,8 @@ static int           linkIndex = 0;
 static int           settingsIndex = SETTINGS_WIFI;
 static bool          autoSleep = true;  // RAM only: back on after every boot
 static int           resetIndex = RESET_CANCEL;
+// First-boot setup (no profile yet): Wi-Fi setup cannot be left; a reboot ends it.
+static bool          provisioning = false;
 
 void fsmInit()
 {
@@ -48,6 +50,7 @@ void fsmInit()
     linkIndex = 0;
     settingsIndex = SETTINGS_WIFI;
     resetIndex = RESET_CANCEL;
+    provisioning = false;
 }
 
 state_t fsmGetState()
@@ -202,6 +205,7 @@ void fsmHandleEvent(event_t event)
                     stateEnterTime = millis();
                     break;
                 case EVENT_ENTER_SETTINGS:
+                    provisioning = true;
                     currentState = STATE_SETTINGS;
                     stateEnterTime = millis();
                     break;
@@ -401,6 +405,8 @@ void fsmHandleEvent(event_t event)
             switch (event)
             {
                 case EVENT_LEFT_CLICK:
+                    if (provisioning)
+                        break;
                     currentState = STATE_SETTINGS_MENU;  // side effects (AP down) in dispatchEvent
                     stateEnterTime = millis();
                     break;
