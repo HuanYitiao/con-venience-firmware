@@ -146,6 +146,16 @@ static void dispatchEvent(event_t event)
             wifiConfigStop();
         }
 
+        // Demo reset: archive the profile folders, then reboot so the normal boot
+        // path finds no profile and goes straight to provisioning.
+        if (after == STATE_PROFILE_RESET)
+        {
+            bool ok = storageArchiveProfiles() > 0;
+            drawResetting(ok);
+            delay(ok ? 1000 : 3000);
+            ESP.restart();
+        }
+
         displayResetScroll();
         Serial0.printf("[EVENT] %-20s | %s -> %s\n", eventName(event), stateName(before),
                        stateName(after));
@@ -610,5 +620,5 @@ void loop()
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
                   fsmGetLinkIndex(), transferPercent, transferIndeterminate,
-                  fsmGetSettingsSelection(), fsmGetAutoSleep(), clockView);
+                  fsmGetSettingsSelection(), fsmGetAutoSleep(), fsmGetResetSelection(), clockView);
 }

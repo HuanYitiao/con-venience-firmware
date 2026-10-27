@@ -16,7 +16,9 @@ typedef enum
     STATE_BLE_TRANSFER,
     STATE_SETTINGS,
     STATE_SETTINGS_MENU,
-    STATE_SETTINGS_CLOCK
+    STATE_SETTINGS_CLOCK,
+    STATE_SETTINGS_RESET,
+    STATE_PROFILE_RESET
 } state_t;
 
 typedef enum
@@ -57,5 +59,6 @@ int           fsmGetMenuSelection();
 int           fsmGetLinkIndex();
 int           fsmGetSettingsSelection();
 bool          fsmGetAutoSleep();
+int           fsmGetResetSelection();
 bool          fsmIsViewingSelf();
 unsigned long fsmGetStateEnterTime();

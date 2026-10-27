@@ -23,6 +23,8 @@ uuid is not authored here; the firmware generates a random 16-hex id on first sa
 #define SELF_JSON "/self_profile/profile.json"
 #define SELF_BIN "/self_profile/avatar.bin"
 #define FRIENDS_DIR "/friends_profiles"
+// Highest suffix storageArchiveProfiles tries: /self_profile_1 .. /self_profile_999
+#define ARCHIVE_MAX 999
 
 #define PATH_LEN 96
 
@@ -78,3 +80,4 @@ bool storageUuidValidate(const char *s, char out[UUID_LEN]);
 bool storageReadSelfId(char out[UUID_LEN]);
 bool storageEnsureSelfId(char outId[UUID_LEN], const char *preferId = nullptr);
 void storageEnsureParentDir(const char *path);
+int  storageArchiveProfiles();

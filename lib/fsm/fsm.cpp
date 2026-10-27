@@ -15,7 +15,15 @@ enum
     SETTINGS_WIFI = 0,
     SETTINGS_CLOCK,
     SETTINGS_AUTO_SLEEP,
+    SETTINGS_RESET_PROFILE,
     SETTINGS_COUNT
+};
+
+enum
+{
+    RESET_CANCEL = 0,
+    RESET_CONFIRM,
+    RESET_COUNT
 };
 
 static state_t       currentState = STATE_IDLE;
@@ -27,6 +35,7 @@ static int           menuIndex = MENU_PROFILE;
 static int           linkIndex = 0;
 static int           settingsIndex = SETTINGS_WIFI;
 static bool          autoSleep = true;  // RAM only: back on after every boot
+static int           resetIndex = RESET_CANCEL;
 
 void fsmInit()
 {
@@ -38,6 +47,7 @@ void fsmInit()
     menuIndex = MENU_PROFILE;
     linkIndex = 0;
     settingsIndex = SETTINGS_WIFI;
+    resetIndex = RESET_CANCEL;
 }
 
 state_t fsmGetState()
@@ -68,6 +78,11 @@ int fsmGetSettingsSelection()
 bool fsmGetAutoSleep()
 {
     return autoSleep;
+}
+
+int fsmGetResetSelection()
+{
+    return resetIndex;
 }
 
 bool fsmIsViewingSelf()
@@ -150,6 +165,10 @@ const char *stateName(state_t s)
             return "SETTINGS_MENU";
         case STATE_SETTINGS_CLOCK:
             return "SETTINGS_CLOCK";
+        case STATE_SETTINGS_RESET:
+            return "SETTINGS_RESET";
+        case STATE_PROFILE_RESET:
+            return "PROFILE_RESET";
         case STATE_STANDBY:
             return "STANDBY";
         case STATE_LOW_BATTERY:
@@ -420,6 +439,11 @@ void fsmHandleEvent(event_t event)
                         case SETTINGS_AUTO_SLEEP:
                             autoSleep = !autoSleep;  // toggles in place, stays in this menu
                             break;
+                        case SETTINGS_RESET_PROFILE:
+                            currentState = STATE_SETTINGS_RESET;
+                            resetIndex = RESET_CANCEL;  // always opens on Cancel
+                            stateEnterTime = millis();
+                            break;
                     }
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
@@ -452,6 +476,41 @@ void fsmHandleEvent(event_t event)
                     break;
             }
             break;
+
+        case STATE_SETTINGS_RESET:
+            switch (event)
+            {
+                case EVENT_LEFT_CLICK:
+                    currentState = STATE_SETTINGS_MENU;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_UP_CLICK:
+                    resetIndex = (resetIndex + RESET_COUNT - 1) % RESET_COUNT;
+                    break;
+                case EVENT_DOWN_CLICK:
+                    resetIndex = (resetIndex + 1) % RESET_COUNT;
+                    break;
+                case EVENT_RIGHT_CLICK:
+                    // Cancel goes back; Confirm hands over to dispatchEvent, which
+                    // archives the profile folders and reboots.
+                    currentState =
+                        resetIndex == RESET_CONFIRM ? STATE_PROFILE_RESET : STATE_SETTINGS_MENU;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_OVERTIME_SHUTDOWN:
+                    currentState = STATE_STANDBY;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_PROFILE_RESET:
+            break;  // terminal: the device reboots
 
         case STATE_STANDBY:
             switch (event)
