@@ -964,6 +964,14 @@ void drawLowBattery()
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
+void drawNoSdCard()
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawCentered("No SD Card", 48, 16, u8g2_font_7x13B_tf, 0);
+    canvasDrawCentered("Insert card to continue", 68, 12, u8g2_font_6x10_tf, 0);
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
 void displayRender(state_t state, const Contact &self, const Contact &currentContact,
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
@@ -1024,6 +1032,9 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             break;
         case STATE_LOW_BATTERY:
             drawLowBattery();
+            break;
+        case STATE_NO_SD_CARD:
+            drawNoSdCard();
             break;
     }
 }

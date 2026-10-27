@@ -60,6 +60,10 @@ bool powerPeriphIsOn();
 // USB_PWR sense (MCP GPB1).
 bool powerUsbPresent();
 
+// SD card sense (MCP GPB0). Only meaningful while +3.3V_PERIPH is on: waits up
+// to POWER_SD_SENSE_TIMEOUT_MS for the SD rail to come up after the DCDC.
+bool powerSdPresent();
+
 // Ignored while +3.3V_PERIPH is off (would back-power the amp via SD_MODE).
 void powerSetSpeakerEnable(bool on);
 void powerSetBatMonEnable(bool on);

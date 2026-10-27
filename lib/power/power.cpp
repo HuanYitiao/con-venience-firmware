@@ -14,6 +14,8 @@
 
 // TPS63900 soft start + TPS22917 (SD rail, CT=470p) rise, with margin.
 #define POWER_PERIPH_SETTLE_MS 10
+// Extra wait for +3.3V_SD before reading GPB0 as "no card".
+#define POWER_SD_SENSE_TIMEOUT_MS 50
 #define POWER_BAT_SAMPLES 8
 // VBAT -> R14/R15 (10k/10k) -> ADC.
 #define POWER_BAT_DIVIDER 2
@@ -150,6 +152,25 @@ bool powerPeriphIsOn()
 bool powerUsbPresent()
 {
     return (ioexpReadReg(MCP_GPIOB) >> PIN_MCP_USB_PWR) & 1;
+}
+
+bool powerSdPresent()
+{
+    if (!periphOn)
+    {
+        return false;
+    }
+    // A card shows up as soon as the rail is up; only "no card" waits the full timeout.
+    uint32_t t0 = millis();
+    do
+    {
+        if ((ioexpReadReg(MCP_GPIOB) >> PIN_MCP_SD_SENSE) & 1)
+        {
+            return true;
+        }
+        delay(1);
+    } while (millis() - t0 < POWER_SD_SENSE_TIMEOUT_MS);
+    return false;
 }
 
 void powerSetSpeakerEnable(bool on)

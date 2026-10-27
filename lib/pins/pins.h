@@ -47,6 +47,10 @@
     ((1 << PIN_MCP_BTN_UP) | (1 << PIN_MCP_BTN_DOWN) | (1 << PIN_MCP_BTN_PAIR) \
      | (1 << PIN_MCP_BTN_LEFT) | (1 << PIN_MCP_BTN_RIGHT))
 
+// SD sense: +3.3V_SD via R7, high while a card is in (and +3.3V_PERIPH is on).
+// No pull-up: an internal one would back-feed the SD rail.
+#define PIN_MCP_SD_SENSE 0
+
 // USB_PWR: high while powered from USB
 #define PIN_MCP_USB_PWR 1
 
