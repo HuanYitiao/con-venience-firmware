@@ -59,6 +59,7 @@ void          fsmInit();
 void          fsmHandleEvent(event_t event);
 state_t       fsmGetState();
 int           fsmGetContactIndex();
+void          fsmSetContactCount(int count);
 int           fsmGetMenuSelection();
 int           fsmGetLinkIndex();
 int           fsmGetSettingsSelection();

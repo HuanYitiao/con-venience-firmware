@@ -30,6 +30,7 @@ static state_t       currentState = STATE_IDLE;
 static state_t       prePairingState = STATE_IDLE;
 static state_t       preProfileState = STATE_MENU;
 static int           contactIndex = 0;
+static int           contactCount = 0;
 static unsigned long stateEnterTime = 0;
 static int           menuIndex = MENU_PROFILE;
 static int           linkIndex = 0;
@@ -61,6 +62,14 @@ state_t fsmGetState()
 int fsmGetContactIndex()
 {
     return contactIndex;
+}
+
+// The friends list wraps around, so the FSM needs to know how long it is.
+void fsmSetContactCount(int count)
+{
+    contactCount = count;
+    if (contactIndex >= contactCount)
+        contactIndex = contactCount > 0 ? contactCount - 1 : 0;
 }
 
 int fsmGetMenuSelection()
@@ -313,13 +322,16 @@ void fsmHandleEvent(event_t event)
                     stateEnterTime = millis();
                     break;
                 case EVENT_UP_CLICK:
-                    if (contactIndex > 0)
-                        contactIndex--;
+                    if (contactCount > 0)
+                        contactIndex = (contactIndex + contactCount - 1) % contactCount;
                     break;
                 case EVENT_DOWN_CLICK:
-                    contactIndex++;
+                    if (contactCount > 0)
+                        contactIndex = (contactIndex + 1) % contactCount;
                     break;
                 case EVENT_RIGHT_CLICK:
+                    if (contactCount == 0)
+                        break;
                     preProfileState = currentState;
                     currentState = STATE_PROFILE_AVATAR;
                     stateEnterTime = millis();

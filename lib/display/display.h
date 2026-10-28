@@ -94,7 +94,8 @@ void drawSettingsMenu(int settingsSelection, bool autoSleep);
 void drawClock(const ClockView &clockView);
 void drawResetConfirm(int resetSelection);
 void drawResetting(bool ok);
-void drawContactList(const char names[][NAME_LEN], int count, int index);
+void drawContactList(const char names[][NAME_LEN], int count, int index,
+                     const Contact &selected);
 void drawProfileAvatar(const Contact &contact);
 void drawProfileLinks(const Contact &contact, int linkIndex);
 void drawProfileQR(const Contact &contact, int linkIndex);

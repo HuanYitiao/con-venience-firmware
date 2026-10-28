@@ -891,9 +891,37 @@ void drawSettings()
     }
 }
 
-void drawContactList(const char names[][NAME_LEN], int count, int index)
+// Friends list: selected friend's avatar on the left, names on the right.
+void drawContactList(const char names[][NAME_LEN], int count, int index,
+                     const Contact &selected)
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    if (count == 0)
+    {
+        u8g2.setFont(u8g2_font_6x10_tf);
+        const char *empty = "No friends yet";
+        int         w = u8g2.getUTF8Width(empty);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, empty, DISPLAY_UI_X, 58, DISPLAY_UI_WIDTH, 12,
+                       u8g2_font_6x10_tf, (DISPLAY_UI_WIDTH - w) / 2, 0, nullptr);
+        draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+        return;
+    }
+
+    int res = selected.avatarResolution;
+    if (res > 0 && res <= DISPLAY_AVATAR_WIDTH)
+    {
+        int offset = (DISPLAY_AVATAR_WIDTH - res) / 2;
+        canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, offset, offset, selected);
+    }
+    else
+    {
+        u8g2.setFont(u8g2_font_6x10_tf);
+        const char *none = "No avatar";
+        int         w = u8g2.getUTF8Width(none);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, none, 0, 58, DISPLAY_AVATAR_WIDTH, 12,
+                       u8g2_font_6x10_tf, (DISPLAY_AVATAR_WIDTH - w) / 2, 0, nullptr);
+    }
 
     const int lineH = 14;
     const int visibleLines = DISPLAY_HEIGHT / lineH;
@@ -905,14 +933,15 @@ void drawContactList(const char names[][NAME_LEN], int count, int index)
     {
         int  ci = i + listOffset;
         int  y = i * lineH;
-        bool selected = (ci == index);
+        bool isSelected = (ci == index);
 
-        if (selected)
-            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, lineH);
+        if (isSelected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, y, DISPLAY_UI_WIDTH,
+                                lineH);
 
-        canvasDrawText(fullCanvas, DISPLAY_WIDTH, names[ci], 0, y, DISPLAY_WIDTH, lineH,
-                       u8g2_font_6x10_tf, 4, 2, selected ? nullptr : &scrollMisc,
-                       selected ? INV : NOR);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, names[ci], DISPLAY_UI_X, y, DISPLAY_UI_WIDTH,
+                       lineH, u8g2_font_6x10_tf, 4, 2, isSelected ? &scrollMisc : nullptr,
+                       isSelected ? INV : NOR);
     }
 
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
@@ -1023,7 +1052,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             drawMenu(menuSelection, batteryMv);
             break;
         case STATE_CONTACT_LIST:
-            drawContactList(contactNames, contactCount, contactIndex);
+            drawContactList(contactNames, contactCount, contactIndex, currentContact);
             break;
         case STATE_PROFILE_AVATAR:
             drawProfileAvatar(profileContact);

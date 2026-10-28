@@ -358,6 +358,7 @@ void setup()
         Serial0.printf("self: name=%s res=%d links=%d id=%s provision=%d\n", self.name,
                        self.avatarResolution, self.linkCount, self.uuid, needProvision);
         contactCount = min(storageCountContacts(), CONTACTS_MAX);
+        fsmSetContactCount(contactCount);
         Serial0.printf("contactCount: %d\n", contactCount);
         for (int i = 0; i < contactCount; i++)
         {
@@ -586,6 +587,7 @@ void loop()
                 Serial0.printf("loadContact %s: %s\n", peerUuid, loaded ? "OK" : "FAIL");
                 lastContactIndex = -1;
                 contactCount = min(storageCountContacts(), CONTACTS_MAX);
+                fsmSetContactCount(contactCount);
                 for (int i = 0; i < contactCount; i++)
                 {
                     storageLoadContactName(i, contactNames[i], NAME_LEN);
@@ -646,6 +648,10 @@ void loop()
     {
         bool ok = storageLoadContact(currentIndex, currentContact);
         Serial0.printf("loadContact %d: %s\n", currentIndex, ok ? "OK" : "FAIL");
+        // A failed load may leave the previous friend's avatar behind; the
+        // friends list must not show it next to this name.
+        if (!ok)
+            currentContact.avatarResolution = 0;
         lastContactIndex = currentIndex;
     }
 
