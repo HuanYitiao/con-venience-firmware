@@ -891,9 +891,43 @@ void drawSettings()
     }
 }
 
-void drawContactList(const char names[][NAME_LEN], int count, int index)
+// Left half: the friend's avatar, centered when smaller than the half screen.
+static void canvasDrawFriendAvatar(const Contact &contact)
+{
+    int res = contact.avatarResolution;
+    if (res > 0 && res <= DISPLAY_AVATAR_WIDTH)
+    {
+        int offset = (DISPLAY_AVATAR_WIDTH - res) / 2;
+        canvasBlitAvatar(fullCanvas, DISPLAY_WIDTH, offset, offset, contact);
+    }
+    else
+    {
+        u8g2.setFont(u8g2_font_6x10_tf);
+        const char *none = "No avatar";
+        int         w = u8g2.getUTF8Width(none);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, none, 0, 58, DISPLAY_AVATAR_WIDTH, 12,
+                       u8g2_font_6x10_tf, (DISPLAY_AVATAR_WIDTH - w) / 2, 0, nullptr);
+    }
+}
+
+// Friends list: selected friend's avatar on the left, names on the right.
+void drawContactList(const char names[][NAME_LEN], int count, int index,
+                     const Contact &selected)
 {
     canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+
+    if (count == 0)
+    {
+        u8g2.setFont(u8g2_font_6x10_tf);
+        const char *empty = "No friends yet";
+        int         w = u8g2.getUTF8Width(empty);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, empty, DISPLAY_UI_X, 58, DISPLAY_UI_WIDTH, 12,
+                       u8g2_font_6x10_tf, (DISPLAY_UI_WIDTH - w) / 2, 0, nullptr);
+        draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+        return;
+    }
+
+    canvasDrawFriendAvatar(selected);
 
     const int lineH = 14;
     const int visibleLines = DISPLAY_HEIGHT / lineH;
@@ -905,16 +939,54 @@ void drawContactList(const char names[][NAME_LEN], int count, int index)
     {
         int  ci = i + listOffset;
         int  y = i * lineH;
-        bool selected = (ci == index);
+        bool isSelected = (ci == index);
 
-        if (selected)
-            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, 0, y, DISPLAY_WIDTH, lineH);
+        if (isSelected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, y, DISPLAY_UI_WIDTH,
+                                lineH);
 
-        canvasDrawText(fullCanvas, DISPLAY_WIDTH, names[ci], 0, y, DISPLAY_WIDTH, lineH,
-                       u8g2_font_6x10_tf, 4, 2, selected ? nullptr : &scrollMisc,
-                       selected ? INV : NOR);
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, names[ci], DISPLAY_UI_X, y, DISPLAY_UI_WIDTH,
+                       lineH, u8g2_font_6x10_tf, 4, 2, isSelected ? &scrollMisc : nullptr,
+                       isSelected ? INV : NOR);
     }
 
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+// name comes from the list, which is what the delete acts on by index; the
+// contact's own copy may be stale if its load failed.
+void drawContactDelete(const Contact &contact, const char *name, int deleteSelection)
+{
+    static const char *const items[2] = {"Cancel", "Delete"};
+
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawFriendAvatar(contact);
+
+    canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH, 16);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, "Delete friend?", DISPLAY_UI_X, 0, DISPLAY_UI_WIDTH,
+                   16, u8g2_font_6x10_tf, 4, 3, nullptr, INV);
+    canvasDrawText(fullCanvas, DISPLAY_WIDTH, name, DISPLAY_UI_X, 24, DISPLAY_UI_WIDTH, 16,
+                   u8g2_font_8x13B_tf, 4, 2, &scrollName);
+
+    for (int i = 0; i < 2; i++)
+    {
+        int  y = 72 + i * 16;
+        bool selected = (deleteSelection == i);
+
+        if (selected)
+            canvasDrawHighlight(fullCanvas, DISPLAY_WIDTH, DISPLAY_UI_X, y, DISPLAY_UI_WIDTH, 14);
+
+        canvasDrawText(fullCanvas, DISPLAY_WIDTH, items[i], DISPLAY_UI_X, y, DISPLAY_UI_WIDTH, 14,
+                       u8g2_font_6x10_tf, 4, 2, nullptr, selected ? INV : NOR);
+    }
+
+    draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
+}
+
+void drawContactDeleted(bool ok)
+{
+    canvasClear(fullCanvas, DISPLAY_WIDTH, DISPLAY_NUM_PAGES);
+    canvasDrawCentered(ok ? "Friend deleted" : "Delete failed", 56, 16, u8g2_font_7x13B_tf, 0);
     draw(fullCanvas, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, NOR);
 }
 
@@ -996,7 +1068,8 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   bool autoSleep, int resetSelection, const ClockView &clockView,
+                   bool autoSleep, int resetSelection, int deleteSelection,
+                   const ClockView &clockView,
                    uint8_t batteryLevel, uint16_t batteryMv)
 {
     switch (state)
@@ -1023,7 +1096,7 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
             drawMenu(menuSelection, batteryMv);
             break;
         case STATE_CONTACT_LIST:
-            drawContactList(contactNames, contactCount, contactIndex);
+            drawContactList(contactNames, contactCount, contactIndex, currentContact);
             break;
         case STATE_PROFILE_AVATAR:
             drawProfileAvatar(profileContact);
@@ -1056,5 +1129,10 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
         case STATE_NO_SD_CARD:
             drawNoSdCard();
             break;
+        case STATE_CONTACT_DELETE:
+            drawContactDelete(currentContact, contactNames[contactIndex], deleteSelection);
+            break;
+        case STATE_CONTACT_DELETING:
+            break;  // main draws the result while it moves the folder
     }
 }

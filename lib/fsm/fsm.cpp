@@ -26,16 +26,25 @@ enum
     RESET_COUNT
 };
 
+enum
+{
+    DELETE_CANCEL = 0,
+    DELETE_CONFIRM,
+    DELETE_COUNT
+};
+
 static state_t       currentState = STATE_IDLE;
 static state_t       prePairingState = STATE_IDLE;
 static state_t       preProfileState = STATE_MENU;
 static int           contactIndex = 0;
+static int           contactCount = 0;
 static unsigned long stateEnterTime = 0;
 static int           menuIndex = MENU_PROFILE;
 static int           linkIndex = 0;
 static int           settingsIndex = SETTINGS_WIFI;
 static bool          autoSleep = true;  // RAM only: back on after every boot
 static int           resetIndex = RESET_CANCEL;
+static int           deleteIndex = DELETE_CANCEL;
 // First-boot setup (no profile yet): Wi-Fi setup cannot be left; a reboot ends it.
 static bool          provisioning = false;
 
@@ -50,6 +59,7 @@ void fsmInit()
     linkIndex = 0;
     settingsIndex = SETTINGS_WIFI;
     resetIndex = RESET_CANCEL;
+    deleteIndex = DELETE_CANCEL;
     provisioning = false;
 }
 
@@ -61,6 +71,14 @@ state_t fsmGetState()
 int fsmGetContactIndex()
 {
     return contactIndex;
+}
+
+// The friends list wraps around, so the FSM needs to know how long it is.
+void fsmSetContactCount(int count)
+{
+    contactCount = count;
+    if (contactIndex >= contactCount)
+        contactIndex = contactCount > 0 ? contactCount - 1 : 0;
 }
 
 int fsmGetMenuSelection()
@@ -86,6 +104,11 @@ bool fsmGetAutoSleep()
 int fsmGetResetSelection()
 {
     return resetIndex;
+}
+
+int fsmGetDeleteSelection()
+{
+    return deleteIndex;
 }
 
 bool fsmIsViewingSelf()
@@ -135,6 +158,8 @@ const char *eventName(event_t e)
             return "ENTER_SETTINGS";
         case EVENT_NO_SD_CARD:
             return "NO_SD_CARD";
+        case EVENT_CONTACT_DELETED:
+            return "CONTACT_DELETED";
         case EVENT_BATTERY_LOW:
             return "BATTERY_LOW";
         case EVENT_OVERTIME_SHUTDOWN:
@@ -176,6 +201,10 @@ const char *stateName(state_t s)
             return "PROFILE_RESET";
         case STATE_NO_SD_CARD:
             return "NO_SD_CARD";
+        case STATE_CONTACT_DELETE:
+            return "CONTACT_DELETE";
+        case STATE_CONTACT_DELETING:
+            return "CONTACT_DELETING";
         case STATE_STANDBY:
             return "STANDBY";
         case STATE_LOW_BATTERY:
@@ -313,15 +342,25 @@ void fsmHandleEvent(event_t event)
                     stateEnterTime = millis();
                     break;
                 case EVENT_UP_CLICK:
-                    if (contactIndex > 0)
-                        contactIndex--;
+                    if (contactCount > 0)
+                        contactIndex = (contactIndex + contactCount - 1) % contactCount;
                     break;
                 case EVENT_DOWN_CLICK:
-                    contactIndex++;
+                    if (contactCount > 0)
+                        contactIndex = (contactIndex + 1) % contactCount;
                     break;
                 case EVENT_RIGHT_CLICK:
+                    if (contactCount == 0)
+                        break;
                     preProfileState = currentState;
                     currentState = STATE_PROFILE_AVATAR;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_RIGHT_LONG_PRESS:
+                    if (contactCount == 0)
+                        break;
+                    deleteIndex = DELETE_CANCEL;
+                    currentState = STATE_CONTACT_DELETE;
                     stateEnterTime = millis();
                     break;
                 case EVENT_OVERTIME_SHUTDOWN:
@@ -525,6 +564,46 @@ void fsmHandleEvent(event_t event)
 
         case STATE_PROFILE_RESET:
             break;  // terminal: the device reboots
+
+        case STATE_CONTACT_DELETE:
+            switch (event)
+            {
+                case EVENT_LEFT_CLICK:
+                    currentState = STATE_CONTACT_LIST;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_UP_CLICK:
+                    deleteIndex = (deleteIndex + DELETE_COUNT - 1) % DELETE_COUNT;
+                    break;
+                case EVENT_DOWN_CLICK:
+                    deleteIndex = (deleteIndex + 1) % DELETE_COUNT;
+                    break;
+                case EVENT_RIGHT_CLICK:
+                    // Cancel goes back; Delete hands over to main, which moves the
+                    // friend's folder and reports back with EVENT_CONTACT_DELETED.
+                    currentState = deleteIndex == DELETE_CONFIRM ? STATE_CONTACT_DELETING
+                                                                 : STATE_CONTACT_LIST;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_OVERTIME_SHUTDOWN:
+                    currentState = STATE_STANDBY;
+                    stateEnterTime = millis();
+                    break;
+                case EVENT_BATTERY_LOW:
+                    currentState = STATE_LOW_BATTERY;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case STATE_CONTACT_DELETING:
+            if (event == EVENT_CONTACT_DELETED)
+            {
+                currentState = STATE_CONTACT_LIST;
+                stateEnterTime = millis();
+            }
+            break;
 
         case STATE_STANDBY:
             switch (event)
