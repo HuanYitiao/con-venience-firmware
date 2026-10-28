@@ -81,7 +81,8 @@ void displayRender(state_t state, const Contact &self, const Contact &currentCon
                    const char contactNames[][NAME_LEN], int contactCount, int contactIndex,
                    int menuSelection, bool idleShowQR, const Contact &profileContact, int linkIndex,
                    int transferPercent, bool transferIndeterminate, int settingsSelection,
-                   bool autoSleep, int resetSelection, const ClockView &clockView,
+                   bool autoSleep, int resetSelection, int deleteSelection,
+                   const ClockView &clockView,
                    uint8_t batteryLevel, uint16_t batteryMv);
 void drawHomepage(const Contact &self, uint8_t batteryLevel);
 void drawWaitContact(const Contact &self);
@@ -96,6 +97,8 @@ void drawResetConfirm(int resetSelection);
 void drawResetting(bool ok);
 void drawContactList(const char names[][NAME_LEN], int count, int index,
                      const Contact &selected);
+void drawContactDelete(const Contact &contact, const char *name, int deleteSelection);
+void drawContactDeleted(bool ok);
 void drawProfileAvatar(const Contact &contact);
 void drawProfileLinks(const Contact &contact, int linkIndex);
 void drawProfileQR(const Contact &contact, int linkIndex);

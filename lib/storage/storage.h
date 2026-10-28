@@ -23,6 +23,8 @@ uuid is not authored here; the firmware generates a random 16-hex id on first sa
 #define SELF_JSON "/self_profile/profile.json"
 #define SELF_BIN "/self_profile/avatar.bin"
 #define FRIENDS_DIR "/friends_profiles"
+// Deleted friends are moved here, not erased: /friends_deleted/<uuid>[_N]
+#define FRIENDS_DELETED_DIR "/friends_deleted"
 // Highest suffix storageArchiveProfiles tries: /self_profile_1 .. /self_profile_999
 #define ARCHIVE_MAX 999
 
@@ -76,6 +78,7 @@ bool storageLoadContact(int index, Contact &contact);
 bool storageLoadContactByUuid(const char *uuid, Contact &contact);
 int  storageCountContacts();
 bool storageLoadContactName(int index, char *username, int maxLen);
+bool storageDeleteContact(int index);
 
 bool storageUuidValidate(const char *s, char out[UUID_LEN]);
 bool storageReadSelfId(char out[UUID_LEN]);

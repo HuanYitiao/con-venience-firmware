@@ -277,7 +277,8 @@ bool storageSaveContact(const Contact &contact)
 
 static bool loadContactDir(const char *dirName, Contact &contact);
 
-bool storageLoadContact(int index, Contact &contact)
+// Finds the index-th friend directory (SD iteration order) and copies its name.
+static bool findContactDir(int index, char *dirName, size_t len)
 {
     File dir = SD.open(FRIENDS_DIR, FILE_READ);
     if (!dir)
@@ -308,12 +309,59 @@ bool storageLoadContact(int index, Contact &contact)
         return false;
     }
 
-    char dirName[PATH_LEN];
-    strlcpy(dirName, file.name(), sizeof(dirName));
+    strlcpy(dirName, file.name(), len);
     file.close();
     dir.close();
+    return true;
+}
 
+bool storageLoadContact(int index, Contact &contact)
+{
+    char dirName[PATH_LEN];
+    if (!findContactDir(index, dirName, sizeof(dirName)))
+    {
+        return false;
+    }
     return loadContactDir(dirName, contact);
+}
+
+// Moves the index-th friend to FRIENDS_DELETED_DIR so a mistaken delete can be
+// undone by hand on a PC. A name already taken there gets the first free _N.
+bool storageDeleteContact(int index)
+{
+    char dirName[PATH_LEN];
+    if (!findContactDir(index, dirName, sizeof(dirName)))
+    {
+        return false;
+    }
+
+    if (!SD.exists(FRIENDS_DELETED_DIR) && !SD.mkdir(FRIENDS_DELETED_DIR))
+    {
+        Serial0.println("[storage] delete: create " FRIENDS_DELETED_DIR " failed");
+        return false;
+    }
+
+    char src[PATH_LEN];
+    char dst[PATH_LEN];
+    snprintf(src, sizeof(src), "%s/%s", FRIENDS_DIR, dirName);
+    snprintf(dst, sizeof(dst), "%s/%s", FRIENDS_DELETED_DIR, dirName);
+    for (int n = 1; SD.exists(dst); n++)
+    {
+        if (n > ARCHIVE_MAX)
+        {
+            Serial0.println("[storage] delete: no free suffix");
+            return false;
+        }
+        snprintf(dst, sizeof(dst), "%s/%s_%d", FRIENDS_DELETED_DIR, dirName, n);
+    }
+
+    if (!SD.rename(src, dst))
+    {
+        Serial0.printf("[storage] delete: rename %s failed\n", src);
+        return false;
+    }
+    Serial0.printf("[storage] deleted %s -> %s\n", src, dst);
+    return true;
 }
 
 bool storageLoadContactByUuid(const char *uuid, Contact &contact)

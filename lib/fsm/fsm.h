@@ -19,7 +19,9 @@ typedef enum
     STATE_SETTINGS_CLOCK,
     STATE_SETTINGS_RESET,
     STATE_PROFILE_RESET,
-    STATE_NO_SD_CARD
+    STATE_NO_SD_CARD,
+    STATE_CONTACT_DELETE,   // confirm page for removing the selected friend
+    STATE_CONTACT_DELETING  // transient: main moves the folder, then sends EVENT_CONTACT_DELETED
 } state_t;
 
 typedef enum
@@ -44,7 +46,8 @@ typedef enum
     EVENT_BATTERY_LOW,
     EVENT_OVERTIME_SHUTDOWN,
     EVENT_ENTER_SETTINGS,
-    EVENT_NO_SD_CARD
+    EVENT_NO_SD_CARD,
+    EVENT_CONTACT_DELETED
 } event_t;
 
 #define CARD_DISPLAY_MS 10000
@@ -65,5 +68,6 @@ int           fsmGetLinkIndex();
 int           fsmGetSettingsSelection();
 bool          fsmGetAutoSleep();
 int           fsmGetResetSelection();
+int           fsmGetDeleteSelection();
 bool          fsmIsViewingSelf();
 unsigned long fsmGetStateEnterTime();

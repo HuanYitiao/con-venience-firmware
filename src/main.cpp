@@ -107,6 +107,18 @@ static void startBle()
     Serial0.println("startBle: bleStart called");
 }
 
+// Re-reads the friends list after it changed on the SD card (pairing, delete).
+static void reloadContacts()
+{
+    contactCount = min(storageCountContacts(), CONTACTS_MAX);
+    fsmSetContactCount(contactCount);
+    for (int i = 0; i < contactCount; i++)
+    {
+        storageLoadContactName(i, contactNames[i], NAME_LEN);
+    }
+    lastContactIndex = -1;
+}
+
 static bool isBleActiveState(state_t s)
 {
     return s == STATE_BLE_CONNECTING || s == STATE_BLE_TRANSFER;
@@ -585,13 +597,7 @@ void loop()
                 // list reloads its own entry when it is opened again.
                 bool loaded = storageLoadContactByUuid(peerUuid, currentContact);
                 Serial0.printf("loadContact %s: %s\n", peerUuid, loaded ? "OK" : "FAIL");
-                lastContactIndex = -1;
-                contactCount = min(storageCountContacts(), CONTACTS_MAX);
-                fsmSetContactCount(contactCount);
-                for (int i = 0; i < contactCount; i++)
-                {
-                    storageLoadContactName(i, contactNames[i], NAME_LEN);
-                }
+                reloadContacts();
             }
             fsmHandleEvent(EVENT_BLE_SUCCESS);
         }
@@ -634,6 +640,15 @@ void loop()
         {
             dispatchEvent(EVENT_CARD_OVERTIME);
         }
+    }
+
+    if (fsmGetState() == STATE_CONTACT_DELETING)
+    {
+        bool ok = storageDeleteContact(fsmGetContactIndex());
+        reloadContacts();
+        drawContactDeleted(ok);
+        delay(ok ? 800 : 2000);
+        dispatchEvent(EVENT_CONTACT_DELETED);
     }
 
     settingsService();
@@ -685,6 +700,7 @@ void loop()
     displayRender(fsmGetState(), self, currentContact, contactNames, contactCount,
                   fsmGetContactIndex(), fsmGetMenuSelection(), idleShowQR, profileContact,
                   fsmGetLinkIndex(), transferPercent, transferIndeterminate,
-                  fsmGetSettingsSelection(), fsmGetAutoSleep(), fsmGetResetSelection(), clockView,
+                  fsmGetSettingsSelection(), fsmGetAutoSleep(), fsmGetResetSelection(),
+                  fsmGetDeleteSelection(), clockView,
                   powerBatteryLevel(), powerLastBatteryMv());
 }
