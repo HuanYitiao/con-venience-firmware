@@ -409,14 +409,20 @@ void setup()
     audio_init();
     audio_setWaveform(AUDIO_WAVE_SQUARE);
 
+    //static const audio_note_t startupJingle[] = {
+    //    {262, 140},
+    //    {294, 140},
+    //    {330, 400},
+    //};
     static const audio_note_t startupJingle[] = {
-        {262, 140},
-        {294, 140},
-        {330, 400},
+        {2500, 50}
     };
 
-    // audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
-
+    // Cold boot only: a deep-sleep wake also runs setup() and must stay silent.
+    if (wake == POWER_WAKE_COLD_BOOT)
+    {
+        audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
+    }
     Serial0.println("audio ready");
     acomInit();
 
