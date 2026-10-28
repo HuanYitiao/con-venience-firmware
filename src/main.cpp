@@ -414,9 +414,13 @@ void setup()
         {294, 140},
         {330, 400},
     };
+    // {2000, 40}
 
-    // audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
-
+    // Cold boot only: a deep-sleep wake also runs setup() and must stay silent.
+    if (wake == POWER_WAKE_COLD_BOOT)
+    {
+        audio_playSequence(startupJingle, sizeof(startupJingle) / sizeof(startupJingle[0]), 15);
+    }
     Serial0.println("audio ready");
     acomInit();
 
